@@ -1,0 +1,35 @@
+#!/bin/sh
+
+set -e
+
+echo "Running pre-commit checks..."
+
+echo "→ Running gofmt..."
+out=$(gofmt -s -l .)
+if [ -n "$out" ]; then
+  echo "✗ gofmt found unformatted files:"
+  echo "$out"
+  exit 1
+fi
+
+echo "→ Running go vet..."
+go vet ./...
+
+if command -v golangci-lint > /dev/null 2>&1; then
+  echo "→ Running golangci-lint..."
+  golangci-lint run
+else
+  echo "⚠ golangci-lint not installed, skipping"
+fi
+
+echo "→ Running go test..."
+go test -race -count=1 ./...
+
+if command -v govulncheck > /dev/null 2>&1; then
+  echo "→ Running govulncheck..."
+  govulncheck ./...
+else
+  echo "⚠ govulncheck not installed, skipping vulnerability scan"
+fi
+
+echo "✓ All pre-commit checks passed!"

@@ -1,0 +1,19 @@
+# Multi-arch release Dockerfile.
+# Expects pre-built binaries in binaries/linux/{amd64,arm64}/
+#
+# Uses Google's distroless static image:
+#   - no shell, no package manager (minimal attack surface)
+#   - ca-certificates bundled
+#   - nonroot user (uid 65532) by default
+
+FROM gcr.io/distroless/static-debian13:nonroot
+
+ARG TARGETARCH
+
+# Binary name passed from CI workflow (informational; binary is copied to a fixed path
+# because distroless has no shell to expand env vars in ENTRYPOINT).
+ARG BINARY_NAME=ratatoskr
+
+COPY --chmod=0755 binaries/linux/${TARGETARCH}/${BINARY_NAME} /app
+
+ENTRYPOINT ["/app"]
