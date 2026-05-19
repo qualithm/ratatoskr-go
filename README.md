@@ -1,6 +1,6 @@
 # Ratatoskr
 
-[![CI](https://github.com/qualithm/ratatoskr-go/actions/workflows/ci.yaml/badge.svg)](https://github.com/qualithm/ratatoskr-go/actions/workflows/ci.yaml)
+[![CI](https://github.com/qualithm/ratatoskr-go/actions/workflows/ci.yaml/badge.svg?event=pull_request)](https://github.com/qualithm/ratatoskr-go/actions/workflows/ci.yaml)
 [![codecov](https://codecov.io/gh/qualithm/ratatoskr-go/graph/badge.svg)](https://codecov.io/gh/qualithm/ratatoskr-go)
 [![Go Reference](https://pkg.go.dev/badge/github.com/qualithm/ratatoskr-go.svg)](https://pkg.go.dev/github.com/qualithm/ratatoskr-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/qualithm/ratatoskr-go)](https://goreportcard.com/report/github.com/qualithm/ratatoskr-go)
