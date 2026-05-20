@@ -5,15 +5,16 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/qualithm/ratatoskr-go.svg)](https://pkg.go.dev/github.com/qualithm/ratatoskr-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/qualithm/ratatoskr-go)](https://goreportcard.com/report/github.com/qualithm/ratatoskr-go)
 
-Go library and CLI for extracting structural references from LGTM-stack queries. Parses PromQL into
-a stable JSON representation suitable for validation, catalog cross-referencing, and dashboard
-auditing.
+Go library and CLI for extracting structural references from LGTM-stack queries. Parses PromQL
+and LogQL into a stable JSON representation suitable for validation, catalog cross-referencing,
+and dashboard auditing.
 
 ## Features
 
-- **AST-accurate extraction** — wraps `github.com/prometheus/prometheus/promql/parser` rather than
-  regex-scraping. Catches references inside `label_replace`, subqueries, binary operators,
-  recording-rule outputs, and `@` modifiers.
+- **AST-accurate extraction** — wraps `github.com/prometheus/prometheus/promql/parser` and
+  `github.com/qualithm/logql-syntax` rather than regex-scraping. Catches references inside
+  `label_replace`, subqueries, binary operators, recording-rule outputs, `@` modifiers, and
+  LogQL pipelines (line filters, label filters, parsers).
 - **Stable JSON output** — sorted, de-duplicated, suitable for diffs.
 - **Library + CLI** — embed `github.com/qualithm/ratatoskr-go` or shell out to the `ratatoskr` binary
   / container.
@@ -84,6 +85,21 @@ Pipe many expressions:
 cat exprs.txt | ratatoskr promql expr -
 ```
 
+LogQL works the same way:
+
+```bash
+ratatoskr logql expr 'sum by (job) (rate({app="api"} |= "error" [5m]))'
+```
+
+```json
+{
+  "expr": "sum by (job) (rate({app=\"api\"} |= \"error\" [5m]))",
+  "streamSelectors": [{ "label": "app", "op": "=", "value": "api" }],
+  "lineFilters": [{ "op": "|=", "match": "error" }],
+  "functions": ["rate", "sum"]
+}
+```
+
 ## JSON Schema
 
 ```jsonc
@@ -101,7 +117,7 @@ cat exprs.txt | ratatoskr promql expr -
 
 ## Roadmap
 
-- [ ] LogQL extraction via `github.com/grafana/loki/v3/pkg/logql/syntax`
+- [x] LogQL extraction via [`github.com/qualithm/logql-syntax`](https://github.com/qualithm/logql-syntax)
 - [ ] Rule-file subcommand (`ratatoskr promql rule-file <path>`)
 - [ ] Grafana dashboard subcommand (`ratatoskr dashboard <path>`)
 - [ ] TraceQL extraction

@@ -1,11 +1,13 @@
-// Command ratatoskr extracts structural information from PromQL
-// expressions, alerting/recording rule files, and (in the future) LogQL
-// expressions and Grafana dashboards.
+// Command ratatoskr extracts structural information from PromQL and LogQL
+// expressions, alerting/recording rule files, and (in the future) Grafana
+// dashboards.
 //
 // Usage:
 //
 //	ratatoskr promql expr <expression>
+//	ratatoskr logql  expr <expression>
 //	echo '<expression>' | ratatoskr promql expr -
+//	echo '<expression>' | ratatoskr logql  expr -
 //
 // Output is line-delimited JSON, one object per parsed expression.
 package main
@@ -36,6 +38,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	switch args[0] {
 	case "promql":
 		return runPromQL(args[1:], stdin, stdout)
+	case "logql":
+		return runLogQL(args[1:], stdin, stdout)
 	case "-h", "--help", "help":
 		return usage()
 	default:
@@ -109,12 +113,74 @@ func emit(enc *json.Encoder, expr string) error {
 	return enc.Encode(res)
 }
 
+func runLogQL(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("logql: expected subcommand (expr)")
+	}
+	switch args[0] {
+	case "expr":
+		return runLogQLExpr(args[1:], stdin, stdout)
+	default:
+		return fmt.Errorf("logql: unknown subcommand %q", args[0])
+	}
+}
+
+func runLogQLExpr(args []string, stdin io.Reader, stdout io.Writer) error {
+	fs := flag.NewFlagSet("logql expr", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	positional := fs.Args()
+	if len(positional) == 0 {
+		return errors.New("logql expr: expected expression or '-' to read stdin")
+	}
+
+	enc := json.NewEncoder(stdout)
+	for _, arg := range positional {
+		if arg == "-" {
+			sc := bufio.NewScanner(stdin)
+			sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+			for sc.Scan() {
+				line := sc.Text()
+				if line == "" {
+					continue
+				}
+				if err := emitLogQL(enc, line); err != nil {
+					return err
+				}
+			}
+			if err := sc.Err(); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := emitLogQL(enc, arg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func emitLogQL(enc *json.Encoder, expr string) error {
+	res, err := ratatoskr.ExtractLogQL(expr)
+	if err != nil {
+		return enc.Encode(struct {
+			ratatoskr.LogQLResult
+			Error string `json:"error"`
+		}{LogQLResult: res, Error: err.Error()})
+	}
+	return enc.Encode(res)
+}
+
 func usage() error {
-	const help = `ratatoskr extracts structural information from PromQL expressions.
+	const help = `ratatoskr extracts structural information from PromQL and LogQL expressions.
 
 Usage:
   ratatoskr promql expr <expression>...
   ratatoskr promql expr -      # read one expression per line from stdin
+  ratatoskr logql  expr <expression>...
+  ratatoskr logql  expr -      # read one expression per line from stdin
 
 Output:
   Line-delimited JSON (one object per input expression).
