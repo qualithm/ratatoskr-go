@@ -24,16 +24,21 @@ import (
 	ratatoskr "github.com/qualithm/ratatoskr-go"
 )
 
+// version is overridden at build time via:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags --always)"
+var version = "dev"
+
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
+	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "ratatoskr:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, stdin io.Reader, stdout io.Writer) error {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return usage()
+		return usage(stderr)
 	}
 	switch args[0] {
 	case "promql":
@@ -41,7 +46,11 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	case "logql":
 		return runLogQL(args[1:], stdin, stdout)
 	case "-h", "--help", "help":
-		return usage()
+		printHelp(stdout)
+		return nil
+	case "-v", "--version", "version":
+		fmt.Fprintln(stdout, version)
+		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -173,18 +182,23 @@ func emitLogQL(enc *json.Encoder, expr string) error {
 	return enc.Encode(res)
 }
 
-func usage() error {
-	const help = `ratatoskr extracts structural information from PromQL and LogQL expressions.
+const helpText = `ratatoskr extracts structural information from PromQL and LogQL expressions.
 
 Usage:
   ratatoskr promql expr <expression>...
   ratatoskr promql expr -      # read one expression per line from stdin
   ratatoskr logql  expr <expression>...
   ratatoskr logql  expr -      # read one expression per line from stdin
+  ratatoskr --version          # print version and exit
+  ratatoskr --help             # print this help
 
 Output:
   Line-delimited JSON (one object per input expression).
 `
-	fmt.Fprint(os.Stderr, help)
+
+func printHelp(w io.Writer) { fmt.Fprint(w, helpText) }
+
+func usage(stderr io.Writer) error {
+	printHelp(stderr)
 	return errors.New("no command")
 }

@@ -68,6 +68,58 @@ func TestExtractPromQL_EmptyInput(t *testing.T) {
 	}
 }
 
+func TestExtractPromQL_AllMatcherOps(t *testing.T) {
+	t.Parallel()
+
+	r, err := ratatoskr.ExtractPromQL(
+		`http_requests_total{a="1",b!="2",c=~"3",d!~"4"}`)
+	if err != nil {
+		t.Fatalf("ExtractPromQL: %v", err)
+	}
+	ops := map[string]bool{}
+	for _, s := range r.Selectors {
+		ops[s.Op] = true
+	}
+	for _, want := range []string{"=", "!=", "=~", "!~"} {
+		if !ops[want] {
+			t.Fatalf("missing matcher op %s in %#v", want, r.Selectors)
+		}
+	}
+}
+
+func TestExtractPromQL_AtModifier(t *testing.T) {
+	t.Parallel()
+
+	r, err := ratatoskr.ExtractPromQL(
+		`rate(http_requests_total[5m] @ 1000) + rate(http_requests_total[5m:1m] @ 2000)`)
+	if err != nil {
+		t.Fatalf("ExtractPromQL: %v", err)
+	}
+	if len(r.AtModifiers) == 0 {
+		t.Fatalf("expected AtModifiers, got %#v", r)
+	}
+}
+
+func TestExtractPromQL_SortStability(t *testing.T) {
+	t.Parallel()
+
+	r, err := ratatoskr.ExtractPromQL(
+		`http_requests_total{job="z",job="a",env=~"prod"}`)
+	if err != nil {
+		t.Fatalf("ExtractPromQL: %v", err)
+	}
+	if len(r.Selectors) < 2 {
+		t.Fatalf("want >=2 selectors, got %#v", r.Selectors)
+	}
+	// Selectors with the same Metric+Label must be ordered by Value.
+	for i := 1; i < len(r.Selectors); i++ {
+		a, b := r.Selectors[i-1], r.Selectors[i]
+		if a.Metric == b.Metric && a.Label == b.Label && a.Op == b.Op && a.Value > b.Value {
+			t.Fatalf("selectors out of order: %#v", r.Selectors)
+		}
+	}
+}
+
 func contains(s []string, v string) bool {
 	for _, x := range s {
 		if x == v {
