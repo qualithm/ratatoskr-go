@@ -89,3 +89,45 @@ func TestExtractLogQL_EmptyInput(t *testing.T) {
 		t.Fatal("expected empty-input error, got nil")
 	}
 }
+
+func TestExtractLogQL_AllLineFilterOps(t *testing.T) {
+	t.Parallel()
+
+	r, err := ratatoskr.ExtractLogQL(
+		`{app="api"} |= "a" != "b" |~ "c" !~ "d"`)
+	if err != nil {
+		t.Fatalf("ExtractLogQL: %v", err)
+	}
+	got := map[string]string{}
+	for _, lf := range r.LineFilters {
+		got[lf.Op] = lf.Match
+	}
+	for _, op := range []string{"|=", "!=", "|~", "!~"} {
+		if _, ok := got[op]; !ok {
+			t.Fatalf("missing op %s in %#v", op, r.LineFilters)
+		}
+	}
+}
+
+func TestExtractLogQL_SortingStability(t *testing.T) {
+	t.Parallel()
+
+	// Same Op, different Match — exercises sortLineFilters tie-breaker.
+	// Multiple matchers with same Label name across selectors and a regexp
+	// matcher exercise sortLabelMatchers tie-breakers.
+	r, err := ratatoskr.ExtractLogQL(
+		`{app="b",app=~"a"} |= "zeta" |= "alpha"`)
+	if err != nil {
+		t.Fatalf("ExtractLogQL: %v", err)
+	}
+	if len(r.LineFilters) != 2 || r.LineFilters[0].Match != "alpha" {
+		t.Fatalf("LineFilters not sorted by match: %#v", r.LineFilters)
+	}
+	if len(r.StreamSelectors) < 2 {
+		t.Fatalf("want >=2 selectors, got %#v", r.StreamSelectors)
+	}
+	if r.StreamSelectors[0].Op > r.StreamSelectors[1].Op &&
+		r.StreamSelectors[0].Label == r.StreamSelectors[1].Label {
+		t.Fatalf("selectors not sorted: %#v", r.StreamSelectors)
+	}
+}
