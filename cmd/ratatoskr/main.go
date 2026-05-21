@@ -49,7 +49,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		printHelp(stdout)
 		return nil
 	case "-v", "--version", "version":
-		fmt.Fprintln(stdout, version)
+		_, _ = fmt.Fprintln(stdout, version)
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -196,7 +196,7 @@ Output:
   Line-delimited JSON (one object per input expression).
 `
 
-func printHelp(w io.Writer) { fmt.Fprint(w, helpText) }
+func printHelp(w io.Writer) { _, _ = fmt.Fprint(w, helpText) }
 
 func usage(stderr io.Writer) error {
 	printHelp(stderr)
