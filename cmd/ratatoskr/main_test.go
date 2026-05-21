@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -102,8 +104,9 @@ func TestRun_LogQL_NoExpression(t *testing.T) {
 // decodeLines splits stdout into one decoded JSON object per line.
 func decodeLines(t *testing.T, s string) []map[string]any {
 	t.Helper()
-	var out []map[string]any
-	for _, line := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	out := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
 		if line == "" {
 			continue
 		}
@@ -201,3 +204,25 @@ func TestRun_PromQL_Expr_StdinReadError(t *testing.T) {
 type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+// TestMainEntrypoint exercises the main() wrapper (including the os.Exit
+// error path) by re-execing the test binary as a subprocess.
+func TestMainEntrypoint(t *testing.T) {
+	if os.Getenv("RATATOSKR_TEST_MAIN") == "1" {
+		os.Args = []string{"ratatoskr", "bogus"}
+		main()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMainEntrypoint$")
+	cmd.Env = append(os.Environ(), "RATATOSKR_TEST_MAIN=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 1 {
+		t.Fatalf("expected exit code 1, got err=%v", err)
+	}
+	if !strings.Contains(stderr.String(), "ratatoskr:") {
+		t.Fatalf("expected ratatoskr error prefix on stderr, got %q", stderr.String())
+	}
+}
