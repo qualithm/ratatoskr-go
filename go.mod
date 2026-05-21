@@ -4,12 +4,8 @@ go 1.26
 
 require (
 	github.com/prometheus/prometheus v0.311.3
-	github.com/qualithm/logql-syntax v0.0.0-00010101000000-000000000000
+	github.com/qualithm/logql-syntax v0.1.0
 )
-
-// TODO: remove once github.com/qualithm/logql-syntax has its first tagged
-// release; this replace lets the workspace develop both modules in lockstep.
-replace github.com/qualithm/logql-syntax => ../logql-syntax
 
 require (
 	dario.cat/mergo v1.0.1 // indirect
