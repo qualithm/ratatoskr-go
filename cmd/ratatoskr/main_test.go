@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -218,8 +219,8 @@ func TestMainEntrypoint(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok || exitErr.ExitCode() != 1 {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("expected exit code 1, got err=%v", err)
 	}
 	if !strings.Contains(stderr.String(), "ratatoskr:") {
