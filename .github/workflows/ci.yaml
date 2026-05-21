@@ -88,7 +88,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: true
       - name: Test
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 -shuffle=on ./...
 
   coverage:
     name: Coverage
@@ -103,7 +103,14 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Run tests with coverage
-        run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -race -count=1 -shuffle=on -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./...
+      - name: Enforce coverage threshold
+        run: |
+          # Drop the examples package: it's a runnable sample, not library code.
+          grep -v "/examples/" coverage.out > coverage.filtered.out
+          pct=$(go tool cover -func=coverage.filtered.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          echo "Total coverage (excluding examples): ${pct}%"
+          awk -v p="$pct" 'BEGIN { if (p+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
