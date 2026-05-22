@@ -1,15 +1,17 @@
-// Command ratatoskr extracts structural information from PromQL and LogQL
-// expressions, alerting/recording rule files, and (in the future) Grafana
-// dashboards.
+// Command ratatoskr extracts structural information from PromQL, LogQL, and
+// TraceQL expressions, Prometheus rule files, and Grafana dashboards.
 //
 // Usage:
 //
-//	ratatoskr promql expr <expression>
-//	ratatoskr logql  expr <expression>
-//	echo '<expression>' | ratatoskr promql expr -
-//	echo '<expression>' | ratatoskr logql  expr -
+//	ratatoskr promql   expr <expression>
+//	ratatoskr promql   rule-file <path>
+//	ratatoskr logql    expr <expression>
+//	ratatoskr traceql  expr <expression>
+//	ratatoskr dashboard <path>
 //
-// Output is line-delimited JSON, one object per parsed expression.
+// Output is line-delimited JSON, one object per parsed expression, rule
+// file, or dashboard. All subcommands accept "-" in place of a positional
+// argument to read from stdin.
 package main
 
 import (
@@ -45,6 +47,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return runPromQL(args[1:], stdin, stdout)
 	case "logql":
 		return runLogQL(args[1:], stdin, stdout)
+	case "traceql":
+		return runTraceQL(args[1:], stdin, stdout)
+	case "dashboard":
+		return runDashboard(args[1:], stdin, stdout)
 	case "-h", "--help", "help":
 		printHelp(stdout)
 		return nil
@@ -56,33 +62,138 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 }
 
+// ---------- PromQL ----------
+
 func runPromQL(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("promql: expected subcommand (expr)")
+		return errors.New("promql: expected subcommand (expr, rule-file)")
 	}
 	switch args[0] {
 	case "expr":
-		return runPromQLExpr(args[1:], stdin, stdout)
+		return runExprSubcommand("promql expr", args[1:], stdin, stdout, emitPromQL)
+	case "rule-file":
+		return runFileSubcommand("promql rule-file", args[1:], stdin, stdout, encodePromQLRuleFile)
 	default:
 		return fmt.Errorf("promql: unknown subcommand %q", args[0])
 	}
 }
 
-func runPromQLExpr(args []string, stdin io.Reader, stdout io.Writer) error {
-	fs := flag.NewFlagSet("promql expr", flag.ContinueOnError)
+func emitPromQL(enc *json.Encoder, expr string) error {
+	res, err := ratatoskr.ExtractPromQL(expr)
+	if err != nil {
+		return enc.Encode(struct {
+			ratatoskr.Result
+			Error string `json:"error"`
+		}{Result: res, Error: err.Error()})
+	}
+	return enc.Encode(res)
+}
+
+func encodePromQLRuleFile(enc *json.Encoder, r io.Reader, src string) error {
+	res, err := ratatoskr.ExtractPromQLRuleFile(r)
+	res.Path = src
+	if err != nil {
+		return enc.Encode(struct {
+			ratatoskr.RuleFileResult
+			Error string `json:"error"`
+		}{RuleFileResult: res, Error: err.Error()})
+	}
+	return enc.Encode(res)
+}
+
+// ---------- LogQL ----------
+
+func runLogQL(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("logql: expected subcommand (expr)")
+	}
+	switch args[0] {
+	case "expr":
+		return runExprSubcommand("logql expr", args[1:], stdin, stdout, emitLogQL)
+	default:
+		return fmt.Errorf("logql: unknown subcommand %q", args[0])
+	}
+}
+
+func emitLogQL(enc *json.Encoder, expr string) error {
+	res, err := ratatoskr.ExtractLogQL(expr)
+	if err != nil {
+		return enc.Encode(struct {
+			ratatoskr.LogQLResult
+			Error string `json:"error"`
+		}{LogQLResult: res, Error: err.Error()})
+	}
+	return enc.Encode(res)
+}
+
+// ---------- TraceQL ----------
+
+func runTraceQL(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("traceql: expected subcommand (expr)")
+	}
+	switch args[0] {
+	case "expr":
+		return runExprSubcommand("traceql expr", args[1:], stdin, stdout, emitTraceQL)
+	default:
+		return fmt.Errorf("traceql: unknown subcommand %q", args[0])
+	}
+}
+
+func emitTraceQL(enc *json.Encoder, expr string) error {
+	res, err := ratatoskr.ExtractTraceQL(expr)
+	if err != nil {
+		return enc.Encode(struct {
+			ratatoskr.TraceQLResult
+			Error string `json:"error"`
+		}{TraceQLResult: res, Error: err.Error()})
+	}
+	return enc.Encode(res)
+}
+
+// ---------- dashboard ----------
+
+func runDashboard(args []string, stdin io.Reader, stdout io.Writer) error {
+	return runFileSubcommand("dashboard", args, stdin, stdout, encodeDashboard)
+}
+
+func encodeDashboard(enc *json.Encoder, r io.Reader, src string) error {
+	res, err := ratatoskr.ExtractDashboard(r)
+	res.Path = src
+	if err != nil {
+		return enc.Encode(struct {
+			ratatoskr.DashboardResult
+			Error string `json:"error"`
+		}{DashboardResult: res, Error: err.Error()})
+	}
+	return enc.Encode(res)
+}
+
+// ---------- shared plumbing ----------
+
+// emitter writes a single JSON line for a single expression. Parse errors
+// are embedded in the JSON so batch callers can keep processing.
+type emitter func(enc *json.Encoder, expr string) error
+
+// fileEncoder writes a single JSON line for a file read from r. src is the
+// source path (empty when reading stdin) and is recorded on the output.
+type fileEncoder func(enc *json.Encoder, r io.Reader, src string) error
+
+func runExprSubcommand(name string, args []string, stdin io.Reader, stdout io.Writer, emit emitter) error {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	positional := fs.Args()
 	if len(positional) == 0 {
-		return errors.New("promql expr: expected expression or '-' to read stdin")
+		return fmt.Errorf("%s: expected expression or '-' to read stdin", name)
 	}
 
 	enc := json.NewEncoder(stdout)
 	for _, arg := range positional {
 		if arg == "-" {
-			if err := processStream(stdin, enc); err != nil {
+			if err := streamExprs(stdin, enc, emit); err != nil {
 				return err
 			}
 			continue
@@ -94,7 +205,7 @@ func runPromQLExpr(args []string, stdin io.Reader, stdout io.Writer) error {
 	return nil
 }
 
-func processStream(r io.Reader, enc *json.Encoder) error {
+func streamExprs(r io.Reader, enc *json.Encoder, emit emitter) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
@@ -109,91 +220,59 @@ func processStream(r io.Reader, enc *json.Encoder) error {
 	return sc.Err()
 }
 
-// emit writes a single JSON line for expr. Parse errors are encoded as
-// {"expr": "...", "error": "..."} so batch callers can keep processing.
-func emit(enc *json.Encoder, expr string) error {
-	res, err := ratatoskr.ExtractPromQL(expr)
-	if err != nil {
-		return enc.Encode(struct {
-			ratatoskr.Result
-			Error string `json:"error"`
-		}{Result: res, Error: err.Error()})
-	}
-	return enc.Encode(res)
-}
-
-func runLogQL(args []string, stdin io.Reader, stdout io.Writer) error {
-	if len(args) == 0 {
-		return errors.New("logql: expected subcommand (expr)")
-	}
-	switch args[0] {
-	case "expr":
-		return runLogQLExpr(args[1:], stdin, stdout)
-	default:
-		return fmt.Errorf("logql: unknown subcommand %q", args[0])
-	}
-}
-
-func runLogQLExpr(args []string, stdin io.Reader, stdout io.Writer) error {
-	fs := flag.NewFlagSet("logql expr", flag.ContinueOnError)
+func runFileSubcommand(name string, args []string, stdin io.Reader, stdout io.Writer, encode fileEncoder) error {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	positional := fs.Args()
-	if len(positional) == 0 {
-		return errors.New("logql expr: expected expression or '-' to read stdin")
+	paths := fs.Args()
+	if len(paths) == 0 {
+		return fmt.Errorf("%s: expected path or '-' to read stdin", name)
 	}
 
 	enc := json.NewEncoder(stdout)
-	for _, arg := range positional {
-		if arg == "-" {
-			sc := bufio.NewScanner(stdin)
-			sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-			for sc.Scan() {
-				line := sc.Text()
-				if line == "" {
-					continue
-				}
-				if err := emitLogQL(enc, line); err != nil {
-					return err
-				}
+	for _, p := range paths {
+		var (
+			r   io.Reader
+			src string
+		)
+		if p == "-" {
+			r = stdin
+		} else {
+			// #nosec G304 -- path comes from the operator's command line.
+			f, err := os.Open(p)
+			if err != nil {
+				return fmt.Errorf("open %s: %w", p, err)
 			}
-			if err := sc.Err(); err != nil {
-				return err
-			}
-			continue
+			r, src = f, p
+			defer func() { _ = f.Close() }()
 		}
-		if err := emitLogQL(enc, arg); err != nil {
+		if err := encode(enc, r, src); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func emitLogQL(enc *json.Encoder, expr string) error {
-	res, err := ratatoskr.ExtractLogQL(expr)
-	if err != nil {
-		return enc.Encode(struct {
-			ratatoskr.LogQLResult
-			Error string `json:"error"`
-		}{LogQLResult: res, Error: err.Error()})
-	}
-	return enc.Encode(res)
-}
-
-const helpText = `ratatoskr extracts structural information from PromQL and LogQL expressions.
+const helpText = `ratatoskr extracts structural information from PromQL, LogQL, and TraceQL.
 
 Usage:
   ratatoskr promql expr <expression>...
-  ratatoskr promql expr -      # read one expression per line from stdin
+  ratatoskr promql expr -            # read one expression per line from stdin
+  ratatoskr promql rule-file <path>...
+  ratatoskr promql rule-file -       # read a rule file from stdin
   ratatoskr logql  expr <expression>...
-  ratatoskr logql  expr -      # read one expression per line from stdin
-  ratatoskr --version          # print version and exit
-  ratatoskr --help             # print this help
+  ratatoskr logql  expr -            # read one expression per line from stdin
+  ratatoskr traceql expr <expression>...
+  ratatoskr traceql expr -           # read one expression per line from stdin
+  ratatoskr dashboard <path>...      # extract a Grafana dashboard JSON file
+  ratatoskr dashboard -              # read a dashboard JSON from stdin
+  ratatoskr --version                # print version and exit
+  ratatoskr --help                   # print this help
 
 Output:
-  Line-delimited JSON (one object per input expression).
+  Line-delimited JSON (one object per input expression, rule file, or dashboard).
 `
 
 func printHelp(w io.Writer) { _, _ = fmt.Fprint(w, helpText) }

@@ -100,16 +100,45 @@ ratatoskr logql expr 'sum by (job) (rate({app="api"} |= "error" [5m]))'
 }
 ```
 
+TraceQL:
+
+```bash
+ratatoskr traceql expr '{ resource.service.name = "api" && span.http.status_code >= 500 } | rate()'
+```
+
+```json
+{
+  "expr": "{ resource.service.name = \"api\" && span.http.status_code >= 500 } | rate()",
+  "attributes": [
+    { "scope": "resource", "name": "service.name" },
+    { "scope": "span", "name": "http.status_code" }
+  ],
+  "functions": ["rate"]
+}
+```
+
+Rule files (Prometheus recording / alerting) and Grafana dashboards:
+
+```bash
+ratatoskr promql rule-file rules.yaml
+ratatoskr dashboard dashboard.json
+```
+
+Both emit one JSON object per input file with per-rule / per-panel extractions
+embedded.
+
 ## JSON Schema
 
 ```jsonc
 {
   "expr": "<original input>",
   "metricRefs": ["sorted", "unique", "metric", "names"],
-  "selectors": [{ "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." }],
+  "selectors": [
+    { "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." },
+  ],
   "atModifiers": [1717000000.0], // optional
   "functions": ["rate", "sum"], // optional
-  "error": "parse: ..." // CLI only, when batch input has bad expressions
+  "error": "parse: ...", // CLI only, when batch input has bad expressions
 }
 ```
 
@@ -117,9 +146,9 @@ ratatoskr logql expr 'sum by (job) (rate({app="api"} |= "error" [5m]))'
 
 - [x] LogQL extraction via
       [`github.com/qualithm/logql-syntax`](https://github.com/qualithm/logql-syntax)
-- [ ] Rule-file subcommand (`ratatoskr promql rule-file <path>`)
-- [ ] Grafana dashboard subcommand (`ratatoskr dashboard <path>`)
-- [ ] TraceQL extraction
+- [x] Rule-file subcommand (`ratatoskr promql rule-file <path>`)
+- [x] Grafana dashboard subcommand (`ratatoskr dashboard <path>`)
+- [x] TraceQL extraction (`ratatoskr traceql expr <expression>`)
 
 ## Development
 

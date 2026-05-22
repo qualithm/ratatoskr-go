@@ -102,6 +102,61 @@ func TestRun_LogQL_NoExpression(t *testing.T) {
 	}
 }
 
+func TestRun_TraceQL_MissingSubcommand(t *testing.T) {
+	_, _, err := runCLI(t, []string{"traceql"}, "")
+	if err == nil || !strings.Contains(err.Error(), "expected subcommand") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRun_TraceQL_UnknownSubcommand(t *testing.T) {
+	_, _, err := runCLI(t, []string{"traceql", "bogus"}, "")
+	if err == nil || !strings.Contains(err.Error(), `unknown subcommand "bogus"`) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRun_TraceQL_NoExpression(t *testing.T) {
+	_, _, err := runCLI(t, []string{"traceql", "expr"}, "")
+	if err == nil || !strings.Contains(err.Error(), "expected expression") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRun_TraceQL_Expr_Arg(t *testing.T) {
+	stdout, _, err := runCLI(t, []string{"traceql", "expr", `{ span.http.method = "GET" }`}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["error"] != nil {
+		t.Fatalf("got %v", objs)
+	}
+}
+
+func TestRun_TraceQL_Expr_ParseError(t *testing.T) {
+	stdout, _, err := runCLI(t, []string{"traceql", "expr", "{ bad !@#"}, "")
+	if err != nil {
+		t.Fatalf("parse errors should be embedded: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["error"] == nil {
+		t.Fatalf("expected embedded error, got %v", objs)
+	}
+}
+
+func TestRun_TraceQL_Expr_Stdin(t *testing.T) {
+	in := "{ span.http.method = \"GET\" }\n\n{ duration > 1s }\n"
+	stdout, _, err := runCLI(t, []string{"traceql", "expr", "-"}, in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 2 {
+		t.Fatalf("want 2, got %d: %s", len(objs), stdout)
+	}
+}
+
 // decodeLines splits stdout into one decoded JSON object per line.
 func decodeLines(t *testing.T, s string) []map[string]any {
 	t.Helper()
@@ -205,6 +260,134 @@ func TestRun_PromQL_Expr_StdinReadError(t *testing.T) {
 type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+const cliSampleRuleFile = `groups:
+  - name: g
+    interval: 1m
+    rules:
+      - record: r:up:sum
+        expr: sum(up)
+      - alert: BadAlert
+        expr: "((("
+`
+
+func TestRun_PromQL_RuleFile_NoArgs(t *testing.T) {
+	_, _, err := runCLI(t, []string{"promql", "rule-file"}, "")
+	if err == nil || !strings.Contains(err.Error(), "expected path") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRun_PromQL_RuleFile_Stdin(t *testing.T) {
+	stdout, _, err := runCLI(t, []string{"promql", "rule-file", "-"}, cliSampleRuleFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 {
+		t.Fatalf("want 1 object, got %d: %s", len(objs), stdout)
+	}
+	groups, _ := objs[0]["groups"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("want 1 group, got %d", len(groups))
+	}
+}
+
+func TestRun_PromQL_RuleFile_FileAndMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/rules.yaml"
+	if err := os.WriteFile(path, []byte(cliSampleRuleFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, err := runCLI(t, []string{"promql", "rule-file", path}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["path"] != path {
+		t.Fatalf("want path=%s in output, got %v", path, objs)
+	}
+
+	_, _, err = runCLI(t, []string{"promql", "rule-file", dir + "/missing.yaml"}, "")
+	if err == nil || !strings.Contains(err.Error(), "open ") {
+		t.Fatalf("want open error, got %v", err)
+	}
+}
+
+func TestRun_PromQL_RuleFile_BadYAMLEmbeddedError(t *testing.T) {
+	stdout, _, err := runCLI(t, []string{"promql", "rule-file", "-"}, "groups: [this is not: valid")
+	if err != nil {
+		t.Fatalf("yaml errors should be embedded, got %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["error"] == nil {
+		t.Fatalf("want embedded error, got %v", objs)
+	}
+}
+
+const cliSampleDashboard = `{
+  "title": "D",
+  "uid": "d-1",
+  "panels": [
+    {
+      "id": 1,
+      "title": "P",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus"},
+      "targets": [{"refId": "A", "expr": "up"}]
+    }
+  ]
+}`
+
+func TestRun_Dashboard_NoArgs(t *testing.T) {
+	_, _, err := runCLI(t, []string{"dashboard"}, "")
+	if err == nil || !strings.Contains(err.Error(), "expected path") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRun_Dashboard_Stdin(t *testing.T) {
+	stdout, _, err := runCLI(t, []string{"dashboard", "-"}, cliSampleDashboard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["title"] != "D" {
+		t.Fatalf("want 1 object with title=D, got %v", objs)
+	}
+}
+
+func TestRun_Dashboard_File(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/d.json"
+	if err := os.WriteFile(path, []byte(cliSampleDashboard), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, err := runCLI(t, []string{"dashboard", path}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["path"] != path {
+		t.Fatalf("want path=%s, got %v", path, objs)
+	}
+
+	_, _, err = runCLI(t, []string{"dashboard", dir + "/missing.json"}, "")
+	if err == nil || !strings.Contains(err.Error(), "open ") {
+		t.Fatalf("want open error, got %v", err)
+	}
+}
+
+func TestRun_Dashboard_BadJSONEmbedded(t *testing.T) {
+	stdout, _, err := runCLI(t, []string{"dashboard", "-"}, "{not json")
+	if err != nil {
+		t.Fatalf("json errors should be embedded, got %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["error"] == nil {
+		t.Fatalf("want embedded error, got %v", objs)
+	}
+}
 
 // TestMainEntrypoint exercises the main() wrapper (including the os.Exit
 // error path) by re-execing the test binary as a subprocess.
