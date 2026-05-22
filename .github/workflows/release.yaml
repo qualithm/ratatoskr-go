@@ -20,6 +20,7 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
   # TODO: Update this to your binary name
   BINARY_NAME: ratatoskr
+  YQ_VERSION: "v4.44.3"
 
 jobs:
   build-binaries:
@@ -161,3 +162,90 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-helm:
+    name: Update Helm
+    runs-on: ubuntu-24.04
+    needs: docker
+    steps:
+      - name: Create TAG env (sha-short)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: cloud
+
+      - name: Checkout cloud repo
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/cloud
+          token: ${{ steps.app-token.outputs.token }}
+          path: cloud
+          fetch-depth: 0
+
+      - name: Install yq (pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"; case "$arch" in
+            x86_64) yq_arch="amd64" ;;
+            aarch64|arm64) yq_arch="arm64" ;;
+            *) echo "Unsupported arch: $arch" >&2; exit 1 ;;
+          esac
+          curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${yq_arch}"
+          chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Update Helm values image tag with yq
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart_dir="./cloud/helm/lgtm"
+          values_file="${chart_dir}/values.yaml"
+
+          if [[ ! -f "$values_file" ]]; then
+            echo "Helm values not found at $values_file" >&2
+            exit 1
+          fi
+
+          yq eval --inplace '.validation.tools.ratatoskr.image.tag = strenv(TAG)' "$values_file"
+
+          echo "Updated ratatoskr image tag in values.yaml to: ${TAG}"
+          yq '.validation.tools.ratatoskr.image' "$values_file"
+
+      - name: Commit and push changes
+        shell: bash
+        working-directory: cloud
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm/lgtm/values.yaml
+          git diff --cached --quiet || git commit -m "chore(ci): sync lgtm ratatoskr Helm tag to ${TAG}"
+          git push
+
+      - name: Merge into test and development branches
+        shell: bash
+        working-directory: cloud
+        run: |
+          set -euo pipefail
+          for branch in test development; do
+            if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+              echo "Merging main into $branch..."
+              git fetch origin "$branch"
+              git checkout "$branch"
+              git merge origin/main --no-edit -m "chore(ci): merge main into $branch"
+              git push origin "$branch"
+              git checkout main
+            else
+              echo "Branch $branch does not exist, skipping."
+            fi
+          done
