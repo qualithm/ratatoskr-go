@@ -35,9 +35,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -67,14 +67,14 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
         with:
           version: v2.1
           install-mode: goinstall
@@ -89,9 +89,9 @@ jobs:
         go-version: ["1.26"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
@@ -104,9 +104,9 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -123,13 +123,13 @@ jobs:
           awk -v p="$pct" 'BEGIN { if (p+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
           fail_ci_if_error: false
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: coverage-report
           path: coverage.out
@@ -141,9 +141,9 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -158,14 +158,14 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Run gosec
-        uses: securego/gosec@master
+        uses: securego/gosec@6351b0c6fcc7d75acb230a9be7f9047aada322ae # master
         with:
           args: -exclude-dir=examples ./...
 
@@ -176,16 +176,16 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Run benchmarks
         run: go test -run=^$ -bench=. -benchmem ./... | tee benchmark.txt
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: benchmark-results
           path: benchmark.txt
