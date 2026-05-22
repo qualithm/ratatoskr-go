@@ -1,6 +1,14 @@
 name: CI
 
 on:
+  push:
+    branches: [main, test]
+    paths-ignore:
+      - ".githooks/**"
+      - ".vscode/**"
+      - "**/*.md"
+      - "docker/**"
+      - "LICENSE"
   pull_request:
     branches: [main, test]
     paths-ignore:
@@ -112,6 +120,7 @@ jobs:
           echo "Total coverage (excluding examples): ${pct}%"
           awk -v p="$pct" 'BEGIN { if (p+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
       - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
