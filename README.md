@@ -5,19 +5,19 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/qualithm/ratatoskr-go.svg)](https://pkg.go.dev/github.com/qualithm/ratatoskr-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/qualithm/ratatoskr-go)](https://goreportcard.com/report/github.com/qualithm/ratatoskr-go)
 
-Go library and CLI for extracting structural references from LGTM-stack queries. Parses PromQL
-and LogQL into a stable JSON representation suitable for validation, catalog cross-referencing,
-and dashboard auditing.
+Go library and CLI for extracting structural references from LGTM-stack queries. Parses PromQL and
+LogQL into a stable JSON representation suitable for validation, catalog cross-referencing, and
+dashboard auditing.
 
 ## Features
 
 - **AST-accurate extraction** — wraps `github.com/prometheus/prometheus/promql/parser` and
   `github.com/qualithm/logql-syntax` rather than regex-scraping. Catches references inside
-  `label_replace`, subqueries, binary operators, recording-rule outputs, `@` modifiers, and
-  LogQL pipelines (line filters, label filters, parsers).
+  `label_replace`, subqueries, binary operators, recording-rule outputs, `@` modifiers, and LogQL
+  pipelines (line filters, label filters, parsers).
 - **Stable JSON output** — sorted, de-duplicated, suitable for diffs.
-- **Library + CLI** — embed `github.com/qualithm/ratatoskr-go` or shell out to the `ratatoskr` binary
-  / container.
+- **Library + CLI** — embed `github.com/qualithm/ratatoskr-go` or shell out to the `ratatoskr`
+  binary / container.
 - **Batch-friendly** — `ratatoskr promql expr -` reads one expression per line from stdin and emits
   NDJSON.
 
@@ -106,18 +106,17 @@ ratatoskr logql expr 'sum by (job) (rate({app="api"} |= "error" [5m]))'
 {
   "expr": "<original input>",
   "metricRefs": ["sorted", "unique", "metric", "names"],
-  "selectors": [
-    { "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." },
-  ],
+  "selectors": [{ "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." }],
   "atModifiers": [1717000000.0], // optional
   "functions": ["rate", "sum"], // optional
-  "error": "parse: ...", // CLI only, when batch input has bad expressions
+  "error": "parse: ..." // CLI only, when batch input has bad expressions
 }
 ```
 
 ## Roadmap
 
-- [x] LogQL extraction via [`github.com/qualithm/logql-syntax`](https://github.com/qualithm/logql-syntax)
+- [x] LogQL extraction via
+      [`github.com/qualithm/logql-syntax`](https://github.com/qualithm/logql-syntax)
 - [ ] Rule-file subcommand (`ratatoskr promql rule-file <path>`)
 - [ ] Grafana dashboard subcommand (`ratatoskr dashboard <path>`)
 - [ ] TraceQL extraction
