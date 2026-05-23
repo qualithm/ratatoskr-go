@@ -20,7 +20,6 @@ type textWriter struct{}
 // followed by a blank line. Empty input writes nothing.
 func (textWriter) Write(w io.Writer, env Envelope) error {
 	bw := bufio.NewWriter(w)
-	defer bw.Flush()
 	for i, f := range env.Findings {
 		if i > 0 {
 			if _, err := bw.WriteString("\n"); err != nil {
@@ -41,7 +40,7 @@ func (textWriter) Write(w io.Writer, env Envelope) error {
 			}
 		}
 	}
-	return nil
+	return bw.Flush()
 }
 
 type githubActionsWriter struct{}
@@ -55,7 +54,6 @@ type githubActionsWriter struct{}
 // The "off" severity is silently skipped — producers never emit it.
 func (githubActionsWriter) Write(w io.Writer, env Envelope) error {
 	bw := bufio.NewWriter(w)
-	defer bw.Flush()
 	for _, f := range env.Findings {
 		cmd := gaCommand(f.Severity)
 		if cmd == "" {
@@ -73,7 +71,7 @@ func (githubActionsWriter) Write(w io.Writer, env Envelope) error {
 			return err
 		}
 	}
-	return nil
+	return bw.Flush()
 }
 
 func gaCommand(s finding.Severity) string {
@@ -106,7 +104,6 @@ type tsvWriter struct{}
 // No header row — keep it scriptable.
 func (tsvWriter) Write(w io.Writer, env Envelope) error {
 	bw := bufio.NewWriter(w)
-	defer bw.Flush()
 	for _, f := range env.Findings {
 		cols := []string{
 			string(f.Severity),
@@ -122,7 +119,7 @@ func (tsvWriter) Write(w io.Writer, env Envelope) error {
 			return err
 		}
 	}
-	return nil
+	return bw.Flush()
 }
 
 func tsvEscape(s string) string {

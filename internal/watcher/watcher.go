@@ -48,8 +48,8 @@ type RunFunc func(ctx context.Context, in runner.Inputs) (*runner.Result, error)
 // per-file findings live on [runner.Result.Findings].
 type ResultFunc func(res *runner.Result, err error)
 
-// ReadyFunc, when set, is called with true once after the first
-// successful pass and never again. Wire this to telemetry.SetReady.
+// ReadyFunc is invoked with true once after the first successful pass
+// and never again. Wire this to telemetry.SetReady.
 type ReadyFunc func(ready bool)
 
 // Config bundles the watcher's tunables.

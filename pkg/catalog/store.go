@@ -126,7 +126,7 @@ func (s *FSStore) Get(key string) (Entry, error) {
 }
 
 func (s *FSStore) readFile(path string) (Entry, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //#nosec G304 -- path is computed from validated cache root + sanitised key
 	if err != nil {
 		return Entry{}, err
 	}
@@ -151,7 +151,7 @@ func (s *FSStore) Put(e Entry) error {
 	normaliseResult(e.Result)
 
 	dst := s.pathFor(e.Language, e.Key())
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return fmt.Errorf("catalog: mkdir %s: %w", filepath.Dir(dst), err)
 	}
 

@@ -31,18 +31,18 @@ func runWatch(parent context.Context, env Env, cfg runner.Config, in runner.Inpu
 	tel := telemetry.New()
 	httpDone, httpErr, err := maybeStartTelemetryServer(ctx, env, f.listen, tel)
 	if err != nil {
-		fmt.Fprintf(env.Stderr, "listen: %v\n", err)
+		_, _ = fmt.Fprintf(env.Stderr, "listen: %v\n", err)
 		return ExitErrors
 	}
 
 	onResult := func(res *runner.Result, runErr error) {
 		if runErr != nil {
-			fmt.Fprintf(env.Stderr, "watch run: %v\n", runErr)
+			_, _ = fmt.Fprintf(env.Stderr, "watch run: %v\n", runErr)
 			tel.RecordRun("failed", 0, 0)
 			return
 		}
 		if writeErr := writeReport(env, f.output, format, res); writeErr != nil {
-			fmt.Fprintf(env.Stderr, "watch write: %v\n", writeErr)
+			_, _ = fmt.Fprintf(env.Stderr, "watch write: %v\n", writeErr)
 		}
 		tel.RecordFindings(res.Findings)
 		tel.RecordRun(telemetry.OutcomeFor(res.Findings), res.FilesScanned, 0)
@@ -57,7 +57,7 @@ func runWatch(parent context.Context, env Env, cfg runner.Config, in runner.Inpu
 		CatalogRefresh: f.catalogRefresh,
 	})
 	if err != nil {
-		fmt.Fprintf(env.Stderr, "watcher: %v\n", err)
+		_, _ = fmt.Fprintf(env.Stderr, "watcher: %v\n", err)
 		return ExitErrors
 	}
 
@@ -70,13 +70,13 @@ func runWatch(parent context.Context, env Env, cfg runner.Config, in runner.Inpu
 		}
 	}
 	if runErr != nil {
-		fmt.Fprintf(env.Stderr, "watcher: %v\n", runErr)
+		_, _ = fmt.Fprintf(env.Stderr, "watcher: %v\n", runErr)
 		return ExitErrors
 	}
 	select {
 	case err := <-httpErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Fprintf(env.Stderr, "listen: %v\n", err)
+			_, _ = fmt.Fprintf(env.Stderr, "listen: %v\n", err)
 			return ExitErrors
 		}
 	default:
@@ -118,12 +118,12 @@ func maybeStartTelemetryServer(ctx context.Context, env Env, addr string, tel *t
 		defer close(done)
 		errCh <- srv.Serve(ln)
 	}()
-	go func() {
+	go func() { //#nosec G118 -- shutdown intentionally derives from context.Background so the timeout applies after ctx is already cancelled
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()
-	fmt.Fprintf(env.Stderr, "telemetry listening on %s\n", ln.Addr())
+	_, _ = fmt.Fprintf(env.Stderr, "telemetry listening on %s\n", ln.Addr())
 	return done, errCh, nil
 }

@@ -82,7 +82,7 @@ func DefaultEnv() Env {
 // usage on stderr.
 func Run(ctx context.Context, env Env, args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(env.Stderr, shortUsage)
+		_, _ = fmt.Fprintln(env.Stderr, shortUsage)
 		return ExitErrors
 	}
 	switch args[0] {
@@ -93,7 +93,7 @@ func Run(ctx context.Context, env Env, args []string) int {
 	case "validate":
 		return runValidate(ctx, env, args[0], args[1:], modeValidate)
 	default:
-		fmt.Fprintf(env.Stderr, "cli: unknown subcommand %q\n%s\n", args[0], shortUsage)
+		_, _ = fmt.Fprintf(env.Stderr, "cli: unknown subcommand %q\n%s\n", args[0], shortUsage)
 		return ExitErrors
 	}
 }
@@ -189,19 +189,19 @@ func runValidate(ctx context.Context, env Env, name string, args []string, m mod
 	}
 
 	if len(f.promRules) == 0 && len(f.lokiRules) == 0 && len(f.dashboards) == 0 {
-		fmt.Fprintln(env.Stderr, "no inputs: pass --prometheus-rules / --loki-rules / --dashboards")
+		_, _ = fmt.Fprintln(env.Stderr, "no inputs: pass --prometheus-rules / --loki-rules / --dashboards")
 		return ExitErrors
 	}
 
 	format, err := report.ParseFormat(f.format)
 	if err != nil {
-		fmt.Fprintf(env.Stderr, "format: %v\n", err)
+		_, _ = fmt.Fprintf(env.Stderr, "format: %v\n", err)
 		return ExitErrors
 	}
 
 	cfg, err := buildRunnerConfig(env, f, m)
 	if err != nil {
-		fmt.Fprintf(env.Stderr, "config: %v\n", err)
+		_, _ = fmt.Fprintf(env.Stderr, "config: %v\n", err)
 		return ExitErrors
 	}
 
@@ -213,7 +213,7 @@ func runValidate(ctx context.Context, env Env, name string, args []string, m mod
 
 	if f.watch {
 		if m != modeValidate {
-			fmt.Fprintln(env.Stderr, "--watch is only supported on the validate subcommand")
+			_, _ = fmt.Fprintln(env.Stderr, "--watch is only supported on the validate subcommand")
 			return ExitErrors
 		}
 		return runWatch(ctx, env, cfg, in, f, format)
@@ -221,12 +221,12 @@ func runValidate(ctx context.Context, env Env, name string, args []string, m mod
 
 	res, err := env.NewRunnerFn(ctx, cfg, in)
 	if err != nil {
-		fmt.Fprintf(env.Stderr, "run: %v\n", err)
+		_, _ = fmt.Fprintf(env.Stderr, "run: %v\n", err)
 		return ExitErrors
 	}
 
 	if err := writeReport(env, f.output, format, res); err != nil {
-		fmt.Fprintf(env.Stderr, "write: %v\n", err)
+		_, _ = fmt.Fprintf(env.Stderr, "write: %v\n", err)
 		return ExitErrors
 	}
 
@@ -324,7 +324,7 @@ func buildChecker(env Env, f *flags) (*catalog.Checker, error) {
 		if err != nil {
 			return nil, fmt.Errorf("allowlist open: %w", err)
 		}
-		defer af.Close()
+		defer func() { _ = af.Close() }()
 		al, err := catalog.LoadAllowlist(af)
 		if err != nil {
 			return nil, fmt.Errorf("allowlist parse: %w", err)
@@ -350,14 +350,14 @@ func parseHeaders(raw []string) (http.Header, error) {
 }
 
 func writeReport(env Env, output string, format report.Format, res *runner.Result) error {
-	var w io.Writer = env.Stdout
+	w := env.Stdout
 	if output != "" && output != "-" {
 		// #nosec G304 -- path comes from operator command line.
 		f, err := os.Create(output)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		w = f
 	}
 	rw, err := report.NewWriter(format)

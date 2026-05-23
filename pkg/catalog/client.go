@@ -129,7 +129,7 @@ func (c clientCommon) getJSON(ctx context.Context, path string, params url.Value
 	if err != nil {
 		return fmt.Errorf("catalog: %s: %w", full, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32 MiB cap
 	if err != nil {

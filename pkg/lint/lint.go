@@ -28,6 +28,8 @@ import (
 // finding with the corresponding severity.
 type ForGteIntervalMode string
 
+// ForGteIntervalOff disables the check; ForGteIntervalWarn and
+// ForGteIntervalError report the finding with the corresponding severity.
 const (
 	ForGteIntervalOff   ForGteIntervalMode = "off"
 	ForGteIntervalWarn  ForGteIntervalMode = "warn"

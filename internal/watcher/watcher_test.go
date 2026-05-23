@@ -13,13 +13,12 @@ import (
 	"github.com/qualithm/ratatoskr-go/internal/watcher"
 )
 
-func writeFile(t *testing.T, dir, name, body string) string {
+func writeFile(t *testing.T, dir, name, body string) {
 	t.Helper()
 	p := filepath.Join(dir, name)
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	return p
 }
 
 func TestEagerInitialRun(t *testing.T) {

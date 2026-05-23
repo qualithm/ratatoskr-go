@@ -144,7 +144,6 @@ func (c *Checker) CheckPromQL(ctx context.Context, res ratatoskr.Result, src fin
 		}
 		out = append(out, c.newFinding(
 			finding.CodeMetricUnknown,
-			finding.CategoryCatalog,
 			src,
 			fmt.Sprintf("metric %q not present in catalog", m),
 			Suggest(m, metricNames, c.maxSuggestions(), c.suggestDist()),
@@ -171,7 +170,6 @@ func (c *Checker) CheckPromQL(ctx context.Context, res ratatoskr.Result, src fin
 			if allowed, _ := c.Allow.AllowsLabel(metric, sel.Label); !allowed {
 				out = append(out, c.newFinding(
 					finding.CodeLabelUnknown,
-					finding.CategoryCatalog,
 					src,
 					fmt.Sprintf("label %q not present on metric %q", sel.Label, metric),
 					Suggest(sel.Label, labels, c.maxSuggestions(), c.suggestDist()),
@@ -197,7 +195,6 @@ func (c *Checker) CheckPromQL(ctx context.Context, res ratatoskr.Result, src fin
 		}
 		out = append(out, c.newFinding(
 			finding.CodeLabelValueUnknown,
-			finding.CategoryCatalog,
 			src,
 			fmt.Sprintf("value %q not observed for label %q on metric %q", sel.Value, sel.Label, metric),
 			Suggest(sel.Value, values, c.maxSuggestions(), c.suggestDist()),
@@ -236,7 +233,6 @@ func (c *Checker) CheckLogQL(ctx context.Context, res ratatoskr.LogQLResult, src
 			if allowed, _ := c.Allow.AllowsLabel("", sel.Label); !allowed {
 				out = append(out, c.newFinding(
 					finding.CodeStreamLabelUnknown,
-					finding.CategoryCatalog,
 					src,
 					fmt.Sprintf("stream label %q not present in Loki", sel.Label),
 					Suggest(sel.Label, labels, c.maxSuggestions(), c.suggestDist()),
@@ -261,7 +257,6 @@ func (c *Checker) CheckLogQL(ctx context.Context, res ratatoskr.LogQLResult, src
 		}
 		out = append(out, c.newFinding(
 			finding.CodeStreamValueUnknown,
-			finding.CategoryCatalog,
 			src,
 			fmt.Sprintf("value %q not observed for stream label %q", sel.Value, sel.Label),
 			Suggest(sel.Value, values, c.maxSuggestions(), c.suggestDist()),
@@ -273,11 +268,11 @@ func (c *Checker) CheckLogQL(ctx context.Context, res ratatoskr.LogQLResult, src
 	return out, nil
 }
 
-func (c *Checker) newFinding(code finding.Code, cat finding.Category, src finding.Source, msg string, suggestions []string, ctx finding.Context) finding.Finding {
+func (c *Checker) newFinding(code finding.Code, src finding.Source, msg string, suggestions []string, ctx finding.Context) finding.Finding {
 	return finding.Finding{
 		Code:        code,
 		Severity:    code.DefaultSeverity(),
-		Category:    cat,
+		Category:    finding.CategoryCatalog,
 		Source:      src,
 		Message:     msg,
 		Suggestions: suggestions,

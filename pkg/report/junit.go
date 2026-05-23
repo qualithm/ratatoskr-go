@@ -52,7 +52,6 @@ type junitMessage struct {
 }
 
 func (junitWriter) Write(w io.Writer, env Envelope) error {
-	suites := []junitSuite{}
 	byFile := map[string][]finding.Finding{}
 	for _, f := range env.Findings {
 		key := f.Source.File
@@ -66,6 +65,7 @@ func (junitWriter) Write(w io.Writer, env Envelope) error {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	suites := make([]junitSuite, 0, len(keys))
 	for _, k := range keys {
 		fs := byFile[k]
 		s := junitSuite{Name: k, Tests: len(fs)}
@@ -114,10 +114,9 @@ func junitCaseName(f finding.Finding) string {
 		parts = append(parts, "panel="+f.Source.Panel)
 	}
 	if len(parts) == 0 {
-		parts = append(parts, string(f.Code))
-	} else {
-		parts = append(parts, string(f.Code))
+		return string(f.Code)
 	}
+	parts = append(parts, string(f.Code))
 	return strings.Join(parts, "/")
 }
 

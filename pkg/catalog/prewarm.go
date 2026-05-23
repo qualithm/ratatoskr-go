@@ -51,10 +51,8 @@ func Prewarm(ctx context.Context, c *Checker, in PrewarmInputs, parallelism int)
 
 	for _, t := range tasks {
 		t := t
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			break
-		default:
 		}
 		wg.Add(1)
 		sem <- struct{}{}

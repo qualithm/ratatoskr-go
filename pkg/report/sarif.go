@@ -83,7 +83,6 @@ type sarifColumns string
 func (sarifWriter) Write(w io.Writer, env Envelope) error {
 	// Collect unique rules in stable order.
 	seen := map[string]struct{}{}
-	rules := []sarifRule{}
 	codes := []finding.Code{}
 	for _, f := range env.Findings {
 		if _, ok := seen[string(f.Code)]; ok {
@@ -93,6 +92,7 @@ func (sarifWriter) Write(w io.Writer, env Envelope) error {
 		codes = append(codes, f.Code)
 	}
 	sort.Slice(codes, func(i, j int) bool { return codes[i] < codes[j] })
+	rules := make([]sarifRule, 0, len(codes))
 	for _, c := range codes {
 		rules = append(rules, sarifRule{
 			ID:   string(c),

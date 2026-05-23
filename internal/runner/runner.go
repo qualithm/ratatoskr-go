@@ -140,13 +140,13 @@ func load(in Inputs) (
 
 	for _, p := range promPaths {
 		scanned++
-		f, err := os.Open(p)
+		f, err := os.Open(p) //#nosec G304 -- path comes from operator-supplied rule globs
 		if err != nil {
 			findings = append(findings, fileReadFinding(p, err))
 			continue
 		}
 		res, perr := ratatoskr.ExtractPromQLRuleFile(f)
-		f.Close()
+		_ = f.Close()
 		if perr != nil {
 			findings = append(findings, ruleFileYAMLFinding(p, perr))
 			continue
@@ -158,13 +158,13 @@ func load(in Inputs) (
 
 	for _, p := range lokiPaths {
 		scanned++
-		f, err := os.Open(p)
+		f, err := os.Open(p) //#nosec G304 -- path comes from operator-supplied rule globs
 		if err != nil {
 			findings = append(findings, fileReadFinding(p, err))
 			continue
 		}
 		res, perr := ratatoskr.ExtractLogQLRuleFile(f)
-		f.Close()
+		_ = f.Close()
 		if perr != nil {
 			findings = append(findings, ruleFileYAMLFinding(p, perr))
 			continue
@@ -176,13 +176,13 @@ func load(in Inputs) (
 
 	for _, p := range dashPaths {
 		scanned++
-		f, err := os.Open(p)
+		f, err := os.Open(p) //#nosec G304 -- path comes from operator-supplied dashboard globs
 		if err != nil {
 			findings = append(findings, fileReadFinding(p, err))
 			continue
 		}
 		res, perr := ratatoskr.ExtractDashboard(f)
-		f.Close()
+		_ = f.Close()
 		if perr != nil {
 			findings = append(findings, dashboardJSONFinding(p, perr))
 			continue

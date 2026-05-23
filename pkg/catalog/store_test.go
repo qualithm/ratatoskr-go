@@ -1,6 +1,7 @@
 package catalog_test
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,7 +103,7 @@ func TestMemoryStoreRoundTrip(t *testing.T) {
 	if err := s.Delete(e.Key()); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := s.Get(e.Key()); err != catalog.ErrNotFound {
+	if _, err := s.Get(e.Key()); !errors.Is(err, catalog.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -159,7 +160,7 @@ func TestFSStoreRoundTripAndAtomicity(t *testing.T) {
 	if err := s.Delete(e.Key()); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := s.Get(e.Key()); err != catalog.ErrNotFound {
+	if _, err := s.Get(e.Key()); !errors.Is(err, catalog.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
