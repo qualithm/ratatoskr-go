@@ -5,8 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
+	"sort"
 	"strings"
 )
+
+// DashboardVariableSentinel is the literal substituted for Grafana template
+// variables (e.g. `$job`, `${job}`, `[[job]]`) before parsing a dashboard
+// expression. Downstream checkers should treat selector values equal to this
+// constant as "value came from a dashboard variable" and skip catalog
+// membership checks against it.
+const DashboardVariableSentinel = "__ratatoskr_dashboard_var__"
+
+// DashboardIntervalSentinel is the duration substituted for Grafana built-in
+// interval variables (`$__interval`, `$__rate_interval`, `$__range`). It is a
+// valid PromQL/LogQL range duration so expressions parse cleanly.
+const DashboardIntervalSentinel = "5m"
 
 // DashboardResult is the structural extraction of a Grafana dashboard JSON
 // document. It enumerates panel targets and templating variables together
@@ -47,8 +61,11 @@ type DashboardTarget struct {
 	Datasource string `json:"datasource,omitempty"`
 	// Language is one of "promql", "logql", "unknown".
 	Language string `json:"language"`
-	// Expr is the raw expression text.
+	// Expr is the raw expression text, before variable substitution.
 	Expr string `json:"expr"`
+	// Variables lists Grafana template variable names referenced by Expr
+	// (without the `$` prefix). Sorted, de-duplicated.
+	Variables []string `json:"variables,omitempty"`
 	// PromQL holds the extraction when Language is "promql".
 	PromQL *Result `json:"promql,omitempty"`
 	// LogQL holds the extraction when Language is "logql".
@@ -67,8 +84,11 @@ type DashboardVariable struct {
 	Datasource string `json:"datasource,omitempty"`
 	// Language is one of "promql", "logql", "unknown".
 	Language string `json:"language,omitempty"`
-	// Query is the raw query expression text.
+	// Query is the raw query expression text, before variable substitution.
 	Query string `json:"query,omitempty"`
+	// Variables lists Grafana template variable names referenced by Query
+	// (without the `$` prefix). Sorted, de-duplicated.
+	Variables []string `json:"variables,omitempty"`
 	// PromQL holds the extraction when Language is "promql".
 	PromQL *Result `json:"promql,omitempty"`
 	// LogQL holds the extraction when Language is "logql".
@@ -197,15 +217,20 @@ func extractTarget(refID, ds, expr string) DashboardTarget {
 		Expr:       expr,
 		Language:   languageFor(ds),
 	}
+	norm, vars := normalizeDashboardExpr(expr)
+	t.Variables = vars
+	if t.Language == "unknown" {
+		t.Language = classifyExpr(norm)
+	}
 	switch t.Language {
 	case "promql":
-		res, err := ExtractPromQL(expr)
+		res, err := ExtractPromQL(norm)
 		t.PromQL = &res
 		if err != nil {
 			t.Error = err.Error()
 		}
 	case "logql":
-		res, err := ExtractLogQL(expr)
+		res, err := ExtractLogQL(norm)
 		t.LogQL = &res
 		if err != nil {
 			t.Error = err.Error()
@@ -215,15 +240,20 @@ func extractTarget(refID, ds, expr string) DashboardTarget {
 }
 
 func extractInto(dv *DashboardVariable, expr string) {
+	norm, vars := normalizeDashboardExpr(expr)
+	dv.Variables = vars
+	if dv.Language == "unknown" {
+		dv.Language = classifyExpr(norm)
+	}
 	switch dv.Language {
 	case "promql":
-		res, err := ExtractPromQL(expr)
+		res, err := ExtractPromQL(norm)
 		dv.PromQL = &res
 		if err != nil {
 			dv.Error = err.Error()
 		}
 	case "logql":
-		res, err := ExtractLogQL(expr)
+		res, err := ExtractLogQL(norm)
 		dv.LogQL = &res
 		if err != nil {
 			dv.Error = err.Error()
@@ -282,4 +312,84 @@ func languageFor(ds string) string {
 	default:
 		return "unknown"
 	}
+}
+
+// classifyExpr makes a best-effort guess at the query language for an
+// expression whose datasource type is not declared. A leading `{` (after
+// whitespace) indicates a LogQL stream selector; anything else is treated as
+// PromQL. This mirrors the heuristic in the LGTM validation shell script.
+func classifyExpr(expr string) string {
+	trimmed := strings.TrimLeft(expr, " \t\r\n")
+	if strings.HasPrefix(trimmed, "{") {
+		return "logql"
+	}
+	return "promql"
+}
+
+// Variable substitution patterns. Order matters: interval variables must be
+// substituted before generic `$var` so `$__interval` is not mistaken for `$_`.
+var (
+	dashIntervalRE = regexp.MustCompile(`\$__(?:rate_interval|range|interval(?:_ms)?)\b`)
+	dashBracketRE  = regexp.MustCompile(`\[\[\s*([A-Za-z_][A-Za-z0-9_]*)(?::[^\]]*)?\s*\]\]`)
+	dashBracedRE   = regexp.MustCompile(`\$\{\s*([A-Za-z_][A-Za-z0-9_]*)(?::[^}]*)?\s*\}`)
+	dashBareRE     = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+)
+
+// normalizeDashboardExpr replaces Grafana template variables and built-in
+// interval variables with parser-safe sentinels, returning the normalised
+// expression and the sorted, de-duplicated list of substituted variable
+// names. Interval variables are not included in the returned names list.
+func normalizeDashboardExpr(expr string) (string, []string) {
+	if expr == "" {
+		return "", nil
+	}
+	out := dashIntervalRE.ReplaceAllString(expr, DashboardIntervalSentinel)
+	names := map[string]struct{}{}
+	record := func(n string) {
+		if _, skip := reservedDashboardVars[n]; skip {
+			return
+		}
+		names[n] = struct{}{}
+	}
+	out = dashBracketRE.ReplaceAllStringFunc(out, func(m string) string {
+		if sub := dashBracketRE.FindStringSubmatch(m); len(sub) > 1 {
+			record(sub[1])
+		}
+		return DashboardVariableSentinel
+	})
+	out = dashBracedRE.ReplaceAllStringFunc(out, func(m string) string {
+		if sub := dashBracedRE.FindStringSubmatch(m); len(sub) > 1 {
+			record(sub[1])
+		}
+		return DashboardVariableSentinel
+	})
+	out = dashBareRE.ReplaceAllStringFunc(out, func(m string) string {
+		if sub := dashBareRE.FindStringSubmatch(m); len(sub) > 1 {
+			record(sub[1])
+		}
+		return DashboardVariableSentinel
+	})
+	if len(names) == 0 {
+		return out, nil
+	}
+	namesList := make([]string, 0, len(names))
+	for n := range names {
+		namesList = append(namesList, n)
+	}
+	sort.Strings(namesList)
+	return out, namesList
+}
+
+// reservedDashboardVars are Grafana built-in variable names that are not
+// user-defined template variables and should not be reported as references.
+var reservedDashboardVars = map[string]struct{}{
+	"__interval":      {},
+	"__interval_ms":   {},
+	"__rate_interval": {},
+	"__range":         {},
+	"__from":          {},
+	"__to":            {},
+	"__name":          {},
+	"__org":           {},
+	"__user":          {},
 }
