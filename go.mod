@@ -3,6 +3,7 @@ module github.com/qualithm/ratatoskr-go
 go 1.26.2
 
 require (
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/grafana/tempo v1.5.1-0.20260521222423-9f50627757b1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/common v0.67.5
@@ -28,7 +29,6 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
