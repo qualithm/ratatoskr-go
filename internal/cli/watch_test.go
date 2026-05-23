@@ -135,6 +135,50 @@ func TestWatchRequiresValidateSubcommand(t *testing.T) {
 	}
 }
 
+func TestWatchListenAlreadyInUse(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ok.yaml"), []byte(`groups: []`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// Hold a listener so the watch subcommand cannot bind it.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	env, _, stderr := testEnv(t)
+	code := cli.Run(context.Background(), *env, []string{
+		"validate",
+		"--prometheus-rules", dir,
+		"--watch",
+		"--listen", ln.Addr().String(),
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "listen") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+func TestWatchInvalidInputErrors(t *testing.T) {
+	t.Parallel()
+	env, _, stderr := testEnv(t)
+	code := cli.Run(context.Background(), *env, []string{
+		"validate",
+		"--prometheus-rules", "/does/not/exist/ratatoskr-xyz",
+		"--watch",
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "watcher") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
 func freePort(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
