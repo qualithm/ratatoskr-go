@@ -236,9 +236,9 @@ func TestSARIFWriter(t *testing.T) {
 		t.Fatalf("results: %d", len(doc.Runs[0].Results))
 	}
 	wantLevels := map[string]string{
-		"E101_METRIC_UNKNOWN":   "error",
-		"W401_FOR_LT_INTERVAL":  "warning",
-		"I601_ORPHAN_METRIC":    "note",
+		"E101_METRIC_UNKNOWN":  "error",
+		"W401_FOR_LT_INTERVAL": "warning",
+		"I601_ORPHAN_METRIC":   "note",
 	}
 	for _, r := range doc.Runs[0].Results {
 		if wantLevels[r.RuleID] != r.Level {
