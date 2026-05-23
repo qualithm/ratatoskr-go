@@ -139,14 +139,6 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 }
 ```
 
-## Roadmap
-
-- [x] LogQL extraction via
-      [`github.com/qualithm/logql-syntax`](https://github.com/qualithm/logql-syntax)
-- [x] Rule-file subcommand (`ratatoskr promql rule-file <path>`)
-- [x] Grafana dashboard subcommand (`ratatoskr dashboard <path>`)
-- [x] TraceQL extraction (`ratatoskr traceql expr <expression>`)
-
 ## Development
 
 ### Prerequisites

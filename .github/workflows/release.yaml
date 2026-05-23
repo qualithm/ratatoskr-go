@@ -216,10 +216,10 @@ jobs:
             exit 1
           fi
 
-          yq eval --inplace '.validation.tools.ratatoskr.image.tag = strenv(TAG)' "$values_file"
+          yq eval --inplace '.ratatoskr.image.tag = strenv(TAG)' "$values_file"
 
           echo "Updated ratatoskr image tag in values.yaml to: ${TAG}"
-          yq '.validation.tools.ratatoskr.image' "$values_file"
+          yq '.ratatoskr.image' "$values_file"
 
       - name: Commit and push changes
         shell: bash
