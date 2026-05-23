@@ -410,3 +410,121 @@ func TestMainEntrypoint(t *testing.T) {
 		t.Fatalf("expected ratatoskr error prefix on stderr, got %q", stderr.String())
 	}
 }
+
+// TestMainExitCodePath re-execs the binary with a `lint` invocation that
+// has no inputs so cli.Run returns ExitErrors (2), which main propagates
+// through exitCodeErr.
+func TestMainExitCodePath(t *testing.T) {
+	if os.Getenv("RATATOSKR_TEST_MAIN_EXIT") == "1" {
+		os.Args = []string{"ratatoskr", "lint"}
+		main()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMainExitCodePath$")
+	cmd.Env = append(os.Environ(), "RATATOSKR_TEST_MAIN_EXIT=1")
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("expected exit code 2, got err=%v", err)
+	}
+}
+
+func TestExitCodeErrErrorString(t *testing.T) {
+	var e exitCodeErr = 7
+	if got := e.Error(); !strings.Contains(got, "7") {
+		t.Fatalf("Error() missing code: %q", got)
+	}
+}
+
+const cliSampleLokiRuleFile = `groups:
+  - name: g
+    rules:
+      - record: r:errors
+        expr: sum(rate({app="x"}[5m]))
+      - alert: BadAlert
+        expr: "{{{"
+`
+
+func TestRun_LogQL_RuleFile_NoArgs(t *testing.T) {
+	_, _, err := runCLI(t, []string{"logql", "rule-file"}, "")
+	if err == nil || !strings.Contains(err.Error(), "expected path") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRun_LogQL_RuleFile_Stdin(t *testing.T) {
+	stdout, _, err := runCLI(t, []string{"logql", "rule-file", "-"}, cliSampleLokiRuleFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 {
+		t.Fatalf("want 1 object, got %d: %s", len(objs), stdout)
+	}
+	groups, _ := objs[0]["groups"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("want 1 group, got %d", len(groups))
+	}
+}
+
+func TestRun_LogQL_RuleFile_File(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/rules.yaml"
+	if err := os.WriteFile(path, []byte(cliSampleLokiRuleFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, err := runCLI(t, []string{"logql", "rule-file", path}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["path"] != path {
+		t.Fatalf("want path=%s in output, got %v", path, objs)
+	}
+}
+
+func TestRun_LogQL_RuleFile_BadYAMLEmbeddedError(t *testing.T) {
+	stdout, _, err := runCLI(t, []string{"logql", "rule-file", "-"}, "groups: [this is not: valid")
+	if err != nil {
+		t.Fatalf("yaml errors should be embedded, got %v", err)
+	}
+	objs := decodeLines(t, stdout)
+	if len(objs) != 1 || objs[0]["error"] == nil {
+		t.Fatalf("want embedded error, got %v", objs)
+	}
+}
+
+func TestRun_Lint_NoInputs_ReturnsExitCodeErr(t *testing.T) {
+	// `lint` with no inputs returns ExitErrors (2) from cli.Run, which
+	// run() wraps in exitCodeErr.
+	_, _, err := runCLI(t, []string{"lint"}, "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var ec exitCodeErr
+	if !errors.As(err, &ec) {
+		t.Fatalf("expected exitCodeErr, got %T: %v", err, err)
+	}
+	if int(ec) != 2 {
+		t.Fatalf("expected code 2, got %d", int(ec))
+	}
+}
+
+func TestRun_Validate_NoInputs_ReturnsExitCodeErr(t *testing.T) {
+	_, _, err := runCLI(t, []string{"validate"}, "")
+	var ec exitCodeErr
+	if !errors.As(err, &ec) {
+		t.Fatalf("expected exitCodeErr, got %T: %v", err, err)
+	}
+}
+
+func TestRun_Lint_HappyPath_NoError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/ok.yaml", []byte("groups: []"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := runCLI(t, []string{"lint", "--prometheus-rules", dir}, "")
+	if err != nil {
+		t.Fatalf("expected nil error on clean lint, got %v", err)
+	}
+}

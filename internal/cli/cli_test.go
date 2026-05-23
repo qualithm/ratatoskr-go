@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -305,5 +306,332 @@ func TestBadHeaderRejected(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "malformed header") {
 		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+// fakeLokiClient is a minimal Loki stand-in for end-to-end tests.
+type fakeLokiClient struct{ labels []string }
+
+func (f *fakeLokiClient) LabelNames(_ context.Context) ([]string, error) {
+	return append([]string(nil), f.labels...), nil
+}
+func (f *fakeLokiClient) LabelValues(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func TestCheckRequiresAtLeastOneClient(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, stderr := testEnv(t)
+	// check mode with neither --prometheus-url nor --loki-url must
+	// error from buildChecker.
+	code := cli.Run(context.Background(), *env, []string{
+		"check", "--prometheus-rules", dir,
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "--prometheus-url") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+func TestValidateWithLokiOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "loki.yaml", `
+groups:
+  - name: g
+    rules:
+      - alert: A
+        expr: sum(rate({nope_label="x"}[5m]))
+`)
+	env, stdout, _ := testEnv(t)
+	env.NewLoki = func(_ string, _ *http.Client, _ http.Header) (catalog.LogQLClient, error) {
+		return &fakeLokiClient{labels: []string{"app"}}, nil
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"check",
+		"--loki-rules", dir,
+		"--loki-url", "http://loki.test",
+		"--format", "ndjson",
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d stdout=%s", code, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "E201") {
+		t.Fatalf("expected E201 (stream label unknown) in stdout: %s", stdout.String())
+	}
+}
+
+func TestValidateOfflineSkipsChecker(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, _ := testEnv(t)
+	var promCalled bool
+	env.NewMimir = func(_ string, _ *http.Client, _ http.Header) (catalog.PromQLClient, error) {
+		promCalled = true
+		return &fakePromClient{}, nil
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"validate",
+		"--prometheus-rules", dir,
+		"--prometheus-url", "http://mimir.test",
+		"--offline",
+	})
+	if code != cli.ExitOK {
+		t.Fatalf("code=%d", code)
+	}
+	if promCalled {
+		t.Fatal("--offline must skip Mimir client construction")
+	}
+}
+
+func TestCacheDirAndAllowlistFlags(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "rules.yaml", `
+groups:
+  - name: g
+    interval: 5m
+    rules:
+      - alert: A
+        expr: missing_metric
+        for: 5m
+        labels: { severity: page }
+        annotations: { summary: s, description: d }
+`)
+	allowPath := filepath.Join(t.TempDir(), "allow.yaml")
+	if err := os.WriteFile(allowPath, []byte(`metrics:
+  - pattern: missing_metric
+    reason: known-missing
+`), 0o600); err != nil {
+		t.Fatalf("write allow: %v", err)
+	}
+	cacheDir := t.TempDir()
+
+	env, stdout, stderr := testEnv(t)
+	env.NewMimir = func(_ string, _ *http.Client, _ http.Header) (catalog.PromQLClient, error) {
+		return &fakePromClient{metrics: []string{"up"}}, nil
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"validate",
+		"--prometheus-rules", dir,
+		"--prometheus-url", "http://mimir.test",
+		"--allowlist", allowPath,
+		"--cache-dir", cacheDir,
+		"--format", "ndjson",
+	})
+	if code != cli.ExitOK {
+		t.Fatalf("code=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	if strings.Contains(stdout.String(), "E101") {
+		t.Fatalf("E101 should be suppressed by allowlist: %s", stdout.String())
+	}
+}
+
+func TestAllowlistMissingFileErrors(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, stderr := testEnv(t)
+	env.NewMimir = func(_ string, _ *http.Client, _ http.Header) (catalog.PromQLClient, error) {
+		return &fakePromClient{}, nil
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"check",
+		"--prometheus-rules", dir,
+		"--prometheus-url", "http://mimir.test",
+		"--allowlist", filepath.Join(t.TempDir(), "nope.yaml"),
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "allowlist") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+func TestAllowlistMalformedYAMLErrors(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	allow := filepath.Join(t.TempDir(), "allow.yaml")
+	if err := os.WriteFile(allow, []byte("metrics: [this is: not yaml"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	env, _, stderr := testEnv(t)
+	env.NewMimir = func(_ string, _ *http.Client, _ http.Header) (catalog.PromQLClient, error) {
+		return &fakePromClient{}, nil
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"check",
+		"--prometheus-rules", dir,
+		"--prometheus-url", "http://mimir.test",
+		"--allowlist", allow,
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "allowlist") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+func TestMimirClientCtorError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, stderr := testEnv(t)
+	env.NewMimir = func(_ string, _ *http.Client, _ http.Header) (catalog.PromQLClient, error) {
+		return nil, errors.New("boom")
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"check",
+		"--prometheus-rules", dir,
+		"--prometheus-url", "http://mimir.test",
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "mimir client") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+func TestLokiClientCtorError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, stderr := testEnv(t)
+	env.NewLoki = func(_ string, _ *http.Client, _ http.Header) (catalog.LogQLClient, error) {
+		return nil, errors.New("nope")
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"check",
+		"--loki-rules", dir,
+		"--loki-url", "http://loki.test",
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "loki client") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+func TestRunnerFnErrorPropagates(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, stderr := testEnv(t)
+	env.NewRunnerFn = func(context.Context, runner.Config, runner.Inputs) (*runner.Result, error) {
+		return nil, errors.New("boom")
+	}
+	code := cli.Run(context.Background(), *env, []string{"lint", "--prometheus-rules", dir})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "run:") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+func TestOutputFileOpenError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, stderr := testEnv(t)
+	// Use a path whose parent does not exist so os.Create fails.
+	bad := filepath.Join(t.TempDir(), "missing", "out.json")
+	code := cli.Run(context.Background(), *env, []string{
+		"lint", "--prometheus-rules", dir, "--output", bad,
+	})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "write:") {
+		t.Fatalf("stderr=%s", stderr.String())
+	}
+}
+
+func TestExitZeroAlwaysOKEvenWithWarnings(t *testing.T) {
+	t.Parallel()
+	// no-lint-defaults turns off the chart defaults so we get pure
+	// warning behaviour from --require-severity=false.
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, _ := testEnv(t)
+	code := cli.Run(context.Background(), *env, []string{
+		"lint", "--prometheus-rules", dir, "--no-lint-defaults", "--require-severity=false",
+	})
+	if code != cli.ExitOK {
+		t.Fatalf("code=%d", code)
+	}
+}
+
+func TestDeadlineCancelsContext(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeRule(t, dir, "ok.yaml", `groups: []`)
+	env, _, _ := testEnv(t)
+	var gotCtxErr error
+	env.NewRunnerFn = func(ctx context.Context, _ runner.Config, _ runner.Inputs) (*runner.Result, error) {
+		// The deadline is already in the past; the next select on ctx
+		// should observe its cancellation.
+		select {
+		case <-ctx.Done():
+			gotCtxErr = ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+		return &runner.Result{}, nil
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"lint", "--prometheus-rules", dir, "--deadline", "1ns",
+	})
+	if code != cli.ExitOK {
+		t.Fatalf("code=%d", code)
+	}
+	if gotCtxErr == nil {
+		t.Fatal("expected ctx to be cancelled by deadline")
+	}
+}
+
+func TestDefaultEnvFactories(t *testing.T) {
+	t.Parallel()
+	env := cli.DefaultEnv()
+	if env.NewFSStore == nil || env.NewMimir == nil || env.NewLoki == nil || env.NewRunnerFn == nil {
+		t.Fatal("DefaultEnv missing factory")
+	}
+	if env.NewFSStore(t.TempDir()) == nil {
+		t.Fatal("NewFSStore returned nil")
+	}
+	mc, err := env.NewMimir("http://mimir.test", nil, nil)
+	if err != nil || mc == nil {
+		t.Fatalf("NewMimir: %v %v", mc, err)
+	}
+	lc, err := env.NewLoki("http://loki.test", nil, nil)
+	if err != nil || lc == nil {
+		t.Fatalf("NewLoki: %v %v", lc, err)
+	}
+}
+
+func TestHelpFlagExitsOK(t *testing.T) {
+	t.Parallel()
+	env, _, _ := testEnv(t)
+	code := cli.Run(context.Background(), *env, []string{"lint", "-h"})
+	if code != cli.ExitOK {
+		t.Fatalf("code=%d", code)
+	}
+}
+
+func TestUnknownFlagExitsErrors(t *testing.T) {
+	t.Parallel()
+	env, _, _ := testEnv(t)
+	code := cli.Run(context.Background(), *env, []string{"lint", "--not-a-flag"})
+	if code != cli.ExitErrors {
+		t.Fatalf("code=%d", code)
 	}
 }
