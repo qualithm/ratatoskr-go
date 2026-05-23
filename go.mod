@@ -4,6 +4,8 @@ go 1.26.2
 
 require (
 	github.com/grafana/tempo v1.5.1-0.20260521222423-9f50627757b1
+	github.com/prometheus/client_golang v1.23.2
+	github.com/prometheus/common v0.67.5
 	github.com/prometheus/prometheus v0.311.3
 	github.com/qualithm/logql-syntax v0.1.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -68,9 +70,7 @@ require (
 	github.com/pires/go-proxyproto v0.11.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/exporter-toolkit v0.15.1 // indirect
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect

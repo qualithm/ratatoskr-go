@@ -6,6 +6,7 @@
 //	ratatoskr promql   expr <expression>
 //	ratatoskr promql   rule-file <path>
 //	ratatoskr logql    expr <expression>
+//	ratatoskr logql    rule-file <path>
 //	ratatoskr traceql  expr <expression>
 //	ratatoskr dashboard <path>
 //
@@ -16,6 +17,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -24,6 +26,7 @@ import (
 	"os"
 
 	ratatoskr "github.com/qualithm/ratatoskr-go"
+	"github.com/qualithm/ratatoskr-go/internal/cli"
 )
 
 // version is overridden at build time via:
@@ -32,11 +35,24 @@ import (
 var version = "dev"
 
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "ratatoskr:", err)
-		os.Exit(1)
+	err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	if err == nil {
+		return
 	}
+	var ec exitCodeErr
+	if errors.As(err, &ec) {
+		os.Exit(int(ec))
+	}
+	fmt.Fprintln(os.Stderr, "ratatoskr:", err)
+	os.Exit(1)
 }
+
+// exitCodeErr lets validation subcommands propagate their 1 / 2 exit
+// codes through the existing error-returning dispatch without printing
+// a duplicate error line.
+type exitCodeErr int
+
+func (e exitCodeErr) Error() string { return fmt.Sprintf("exit code %d", int(e)) }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
@@ -51,6 +67,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return runTraceQL(args[1:], stdin, stdout)
 	case "dashboard":
 		return runDashboard(args[1:], stdin, stdout)
+	case "lint", "check", "validate":
+		env := cli.DefaultEnv()
+		env.Stdin, env.Stdout, env.Stderr = stdin, stdout, stderr
+		code := cli.Run(context.Background(), env, args)
+		if code == 0 {
+			return nil
+		}
+		return exitCodeErr(code)
 	case "-h", "--help", "help":
 		printHelp(stdout)
 		return nil
@@ -105,11 +129,13 @@ func encodePromQLRuleFile(enc *json.Encoder, r io.Reader, src string) error {
 
 func runLogQL(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("logql: expected subcommand (expr)")
+		return errors.New("logql: expected subcommand (expr, rule-file)")
 	}
 	switch args[0] {
 	case "expr":
 		return runExprSubcommand("logql expr", args[1:], stdin, stdout, emitLogQL)
+	case "rule-file":
+		return runFileSubcommand("logql rule-file", args[1:], stdin, stdout, encodeLogQLRuleFile)
 	default:
 		return fmt.Errorf("logql: unknown subcommand %q", args[0])
 	}
@@ -122,6 +148,18 @@ func emitLogQL(enc *json.Encoder, expr string) error {
 			ratatoskr.LogQLResult
 			Error string `json:"error"`
 		}{LogQLResult: res, Error: err.Error()})
+	}
+	return enc.Encode(res)
+}
+
+func encodeLogQLRuleFile(enc *json.Encoder, r io.Reader, src string) error {
+	res, err := ratatoskr.ExtractLogQLRuleFile(r)
+	res.Path = src
+	if err != nil {
+		return enc.Encode(struct {
+			ratatoskr.LogQLRuleFileResult
+			Error string `json:"error"`
+		}{LogQLRuleFileResult: res, Error: err.Error()})
 	}
 	return enc.Encode(res)
 }
@@ -264,6 +302,8 @@ Usage:
   ratatoskr promql rule-file -       # read a rule file from stdin
   ratatoskr logql  expr <expression>...
   ratatoskr logql  expr -            # read one expression per line from stdin
+  ratatoskr logql  rule-file <path>...
+  ratatoskr logql  rule-file -       # read a Loki rule file from stdin
   ratatoskr traceql expr <expression>...
   ratatoskr traceql expr -           # read one expression per line from stdin
   ratatoskr dashboard <path>...      # extract a Grafana dashboard JSON file
