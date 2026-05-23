@@ -100,11 +100,12 @@ func TestExtractDashboard(t *testing.T) {
 	}
 
 	p3 := r.Panels[3]
-	if p3.Datasource != "" || p3.Targets[0].Language != "unknown" {
+	// Unknown datasource → classified by leading-brace heuristic. "up" → promql.
+	if p3.Datasource != "" || p3.Targets[0].Language != "promql" {
 		t.Fatalf("panel 3 unknown ds wrong: %+v", p3)
 	}
-	if p3.Targets[0].PromQL != nil || p3.Targets[0].LogQL != nil {
-		t.Fatalf("panel 3: unknown lang should not populate extraction")
+	if p3.Targets[0].PromQL == nil {
+		t.Fatalf("panel 3: heuristic-classified target should populate PromQL extraction: %+v", p3.Targets[0])
 	}
 
 	// query-field fallback panel (id 6) lives at index 4 in flattened order.
@@ -150,5 +151,78 @@ func TestExtractDashboard_Empty(t *testing.T) {
 	}
 	if r.Title != "x" || len(r.Panels) != 0 {
 		t.Fatalf("got %+v", r)
+	}
+}
+
+const dashboardWithVariables = `{
+  "title": "vars",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (job) (rate(http_requests_total{job=\"$job\",status=~\"${status}\"}[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "datasource": { "type": "loki" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate({namespace=\"[[ns]]\"}[$__interval]))" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "datasource": { "type": "unknown-thing" },
+      "targets": [
+        { "refId": "A", "expr": "{app=\"foo\"}" },
+        { "refId": "B", "expr": "up" }
+      ]
+    }
+  ]
+}`
+
+func TestExtractDashboard_NormalisesVariables(t *testing.T) {
+	t.Parallel()
+	r, err := ratatoskr.ExtractDashboard(strings.NewReader(dashboardWithVariables))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(r.Panels) != 3 {
+		t.Fatalf("want 3 panels, got %d", len(r.Panels))
+	}
+
+	prom := r.Panels[0].Targets[0]
+	if prom.Language != "promql" {
+		t.Fatalf("panel 1: want promql language, got %q", prom.Language)
+	}
+	if prom.Error != "" {
+		t.Fatalf("panel 1: unexpected parse error %q", prom.Error)
+	}
+	if got := prom.Variables; len(got) != 2 || got[0] != "job" || got[1] != "status" {
+		t.Fatalf("panel 1: want vars [job status], got %v", got)
+	}
+
+	logql := r.Panels[1].Targets[0]
+	if logql.Language != "logql" {
+		t.Fatalf("panel 2: want logql language, got %q", logql.Language)
+	}
+	if logql.Error != "" {
+		t.Fatalf("panel 2: unexpected parse error %q", logql.Error)
+	}
+	if got := logql.Variables; len(got) != 1 || got[0] != "ns" {
+		t.Fatalf("panel 2: want vars [ns], got %v", got)
+	}
+
+	unkLogql := r.Panels[2].Targets[0]
+	if unkLogql.Language != "logql" {
+		t.Fatalf("panel 3 target A: want logql via heuristic, got %q", unkLogql.Language)
+	}
+	unkProm := r.Panels[2].Targets[1]
+	if unkProm.Language != "promql" {
+		t.Fatalf("panel 3 target B: want promql via heuristic, got %q", unkProm.Language)
 	}
 }
