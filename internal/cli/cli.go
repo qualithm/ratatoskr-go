@@ -22,12 +22,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/qualithm/ratatoskr-go/internal/obs"
 	"github.com/qualithm/ratatoskr-go/internal/runner"
+	"github.com/qualithm/ratatoskr-go/internal/telemetry"
 	"github.com/qualithm/ratatoskr-go/pkg/catalog"
 	"github.com/qualithm/ratatoskr-go/pkg/finding"
 	"github.com/qualithm/ratatoskr-go/pkg/lint"
@@ -53,6 +56,13 @@ type Env struct {
 	NewMimir    func(baseURL string, hc *http.Client, headers http.Header) (catalog.PromQLClient, error)
 	NewLoki     func(baseURL string, hc *http.Client, headers http.Header) (catalog.LogQLClient, error)
 	NewRunnerFn func(ctx context.Context, cfg runner.Config, in runner.Inputs) (*runner.Result, error)
+	// BuildInfo identifies the running binary in telemetry. main()
+	// overrides the defaults with linker-injected values.
+	BuildInfo telemetry.BuildInfo
+	// Logger is the structured logger used for internal diagnostics and
+	// lifecycle events. Defaults to obs.Discard() so tests are quiet;
+	// main() replaces it with a JSON logger writing to Stderr.
+	Logger *slog.Logger
 }
 
 // DefaultEnv returns an Env wired to stdlib defaults and real network
@@ -74,6 +84,7 @@ func DefaultEnv() Env {
 			return catalog.NewLokiClient(baseURL, hc, headers)
 		},
 		NewRunnerFn: runner.Run,
+		Logger:      obs.Discard(),
 	}
 }
 
@@ -221,14 +232,28 @@ func runValidate(ctx context.Context, env Env, name string, args []string, m mod
 
 	res, err := env.NewRunnerFn(ctx, cfg, in)
 	if err != nil {
+		env.Logger.Error("validation run failed",
+			"event", obs.EventError, "stage", "run", "error", err.Error())
 		_, _ = fmt.Fprintf(env.Stderr, "run: %v\n", err)
 		return ExitErrors
 	}
 
 	if err := writeReport(env, f.output, format, res); err != nil {
+		env.Logger.Error("write report failed",
+			"event", obs.EventError, "stage", "write", "error", err.Error())
 		_, _ = fmt.Fprintf(env.Stderr, "write: %v\n", err)
 		return ExitErrors
 	}
+
+	outcome := telemetry.OutcomeFor(res.Findings)
+	env.Logger.Info("validation run completed",
+		"event", obs.EventRunEnd,
+		"outcome", outcome,
+		"findings", len(res.Findings),
+		"files_scanned", res.FilesScanned,
+		"duration_ms", res.Duration.Milliseconds(),
+		"prewarm_ms", res.PrewarmDuration.Milliseconds(),
+	)
 
 	return exitCode(res.Findings, f.exitZero)
 }

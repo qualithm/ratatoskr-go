@@ -27,12 +27,17 @@ import (
 
 	ratatoskr "github.com/qualithm/ratatoskr-go"
 	"github.com/qualithm/ratatoskr-go/internal/cli"
+	"github.com/qualithm/ratatoskr-go/internal/obs"
+	"github.com/qualithm/ratatoskr-go/internal/telemetry"
 )
 
-// version is overridden at build time via:
+// version and commit are overridden at build time via:
 //
-//	go build -ldflags "-X main.version=$(git describe --tags --always)"
-var version = "dev"
+//	go build -ldflags "-X main.version=$(git describe --tags --always) -X main.commit=$(git rev-parse HEAD)"
+var (
+	version = "dev"
+	commit  = "none"
+)
 
 func main() {
 	err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
@@ -70,6 +75,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	case "lint", "check", "validate":
 		env := cli.DefaultEnv()
 		env.Stdin, env.Stdout, env.Stderr = stdin, stdout, stderr
+		env.BuildInfo = telemetry.BuildInfo{Version: version, Commit: commit}
+		env.Logger = obs.New(obs.Options{
+			Writer:  stderr,
+			Version: version,
+			Commit:  commit,
+		})
 		code := cli.Run(context.Background(), env, args)
 		if code == 0 {
 			return nil

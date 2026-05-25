@@ -5,6 +5,9 @@
 BINARY_NAME ?= ratatoskr
 PKG         := ./...
 COVER_FILE  := coverage.out
+VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT      ?= $(shell git rev-parse HEAD 2>/dev/null || echo none)
+LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 .PHONY: help
 help: ## Show available targets
@@ -14,7 +17,7 @@ help: ## Show available targets
 .PHONY: build
 build: ## Build the binary into ./bin
 	@mkdir -p bin
-	go build -trimpath -ldflags="-s -w" -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
+	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
 
 .PHONY: run
 run: ## Run the binary
