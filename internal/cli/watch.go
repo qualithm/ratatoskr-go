@@ -53,6 +53,7 @@ func runWatch(parent context.Context, env Env, cfg runner.Config, in runner.Inpu
 		}
 		outcome := telemetry.OutcomeFor(res.Findings)
 		tel.RecordFindings(res.Findings)
+		tel.RecordLastRunFindings(res.Findings)
 		tel.RecordRun(outcome, res.FilesScannedByKind, res.Duration.Seconds())
 		tel.RecordPrewarm(res.PrewarmDuration.Seconds())
 		env.Logger.Info("watch iteration completed",
