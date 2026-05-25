@@ -42,6 +42,7 @@ const (
 // Format names the log output encoding.
 type Format string
 
+// Supported log output formats.
 const (
 	FormatJSON Format = "json"
 	FormatText Format = "text"
