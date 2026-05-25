@@ -12,27 +12,55 @@ package telemetry
 
 import (
 	"net/http"
+	"runtime"
 	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/qualithm/ratatoskr-go/pkg/finding"
 )
 
-// Telemetry bundles the metrics registry and the HTTP handler for
-// /metrics, /healthz, and /readyz.
-type Telemetry struct {
-	reg            *prometheus.Registry
-	findingsTotal  *prometheus.CounterVec
-	runsTotal      *prometheus.CounterVec
-	filesScanned   prometheus.Counter
-	lastRunSeconds prometheus.Gauge
-	ready          atomic.Bool
+// BuildInfo identifies the running binary. Surfaced as the
+// ratatoskr_build_info gauge so dashboards can overlay deploy markers.
+//
+// Labels are intentionally low-cardinality: at most one series per
+// deployed build. GoVersion defaults to runtime.Version() when empty.
+type BuildInfo struct {
+	Version   string
+	Commit    string
+	GoVersion string
 }
 
-// New constructs a fresh Telemetry with its own registry.
-func New() *Telemetry {
+// Telemetry bundles the metrics registry and the HTTP handler for
+// /metrics, /healthz, and /readyz.
+//
+// NOTE on cardinality: high-cardinality attributes (file path, line
+// number, query text, rule name, metric name, run id) must NEVER be
+// promoted to label dimensions on these metrics. Keep them as log
+// fields instead — see internal/obs once introduced.
+type Telemetry struct {
+	reg             *prometheus.Registry
+	findingsTotal   *prometheus.CounterVec
+	runsTotal       *prometheus.CounterVec
+	filesScanned    *prometheus.CounterVec
+	runDuration     prometheus.Histogram
+	prewarmDuration prometheus.Histogram
+	watchIterations prometheus.Counter
+	buildInfo       *prometheus.GaugeVec
+	ready           atomic.Bool
+}
+
+// New constructs a fresh Telemetry with its own registry. The build
+// information is exposed as the ratatoskr_build_info gauge.
+func New(bi BuildInfo) *Telemetry {
+	if bi.GoVersion == "" {
+		bi.GoVersion = runtime.Version()
+	}
+	if bi.Version == "" {
+		bi.Version = "dev"
+	}
 	reg := prometheus.NewRegistry()
 	t := &Telemetry{
 		reg: reg,
@@ -44,16 +72,41 @@ func New() *Telemetry {
 			Name: "ratatoskr_validation_runs_total",
 			Help: "Total Ratatoskr validation runs, by outcome (clean/warnings/errors/failed).",
 		}, []string{"outcome"}),
-		filesScanned: prometheus.NewCounter(prometheus.CounterOpts{
+		filesScanned: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "ratatoskr_validation_files_scanned_total",
-			Help: "Total files scanned across all validation runs.",
+			Help: "Total files scanned across all validation runs, by input kind.",
+		}, []string{"kind"}),
+		runDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "ratatoskr_validation_run_duration_seconds",
+			Help:    "Wall-clock duration of a Ratatoskr validation run.",
+			Buckets: []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60},
 		}),
-		lastRunSeconds: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "ratatoskr_validation_last_run_duration_seconds",
-			Help: "Wall-clock duration of the most recent validation run.",
+		prewarmDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "ratatoskr_catalog_prewarm_duration_seconds",
+			Help:    "Wall-clock duration of the parallel catalog prewarm phase.",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
 		}),
+		watchIterations: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "ratatoskr_watch_iterations_total",
+			Help: "Total validation passes executed in --watch mode (success or failure).",
+		}),
+		buildInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ratatoskr_build_info",
+			Help: "Constant 1 gauge labelled with the running build's identifying information.",
+		}, []string{"version", "commit", "go_version"}),
 	}
-	reg.MustRegister(t.findingsTotal, t.runsTotal, t.filesScanned, t.lastRunSeconds)
+	reg.MustRegister(
+		t.findingsTotal,
+		t.runsTotal,
+		t.filesScanned,
+		t.runDuration,
+		t.prewarmDuration,
+		t.watchIterations,
+		t.buildInfo,
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		collectors.NewGoCollector(),
+	)
+	t.buildInfo.WithLabelValues(bi.Version, bi.Commit, bi.GoVersion).Set(1)
 	return t
 }
 
@@ -68,18 +121,42 @@ func (t *Telemetry) RecordFindings(findings []finding.Finding) {
 }
 
 // RecordRun increments the runs counter with the outcome label and
-// updates filesScanned + lastRunSeconds.
+// updates files-scanned plus the run duration histogram.
 //
 //   - outcome is one of "clean", "warnings", "errors", "failed".
-//   - filesScanned is the run's input count.
-//   - seconds is the wall-clock run duration.
-func (t *Telemetry) RecordRun(outcome string, filesScanned int, seconds float64) {
+//   - filesByKind is the per-kind input count; valid keys come from the
+//     runner Kind* constants. nil is treated as no files.
+//   - seconds is the wall-clock run duration. Zero is recorded for
+//     "failed" runs that never produced a duration.
+func (t *Telemetry) RecordRun(outcome string, filesByKind map[string]int, seconds float64) {
 	if t == nil {
 		return
 	}
 	t.runsTotal.WithLabelValues(outcome).Inc()
-	t.filesScanned.Add(float64(filesScanned))
-	t.lastRunSeconds.Set(seconds)
+	for kind, n := range filesByKind {
+		if n > 0 {
+			t.filesScanned.WithLabelValues(kind).Add(float64(n))
+		}
+	}
+	t.runDuration.Observe(seconds)
+}
+
+// RecordPrewarm observes the wall-clock duration of one catalog prewarm
+// phase. Zero values are skipped (no prewarm happened).
+func (t *Telemetry) RecordPrewarm(seconds float64) {
+	if t == nil || seconds <= 0 {
+		return
+	}
+	t.prewarmDuration.Observe(seconds)
+}
+
+// RecordWatchIteration increments the watch iterations counter. Call
+// once per pass executed by the --watch loop, regardless of outcome.
+func (t *Telemetry) RecordWatchIteration() {
+	if t == nil {
+		return
+	}
+	t.watchIterations.Inc()
 }
 
 // SetReady toggles the /readyz probe response. /healthz is always 200

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/qualithm/ratatoskr-go/internal/cli"
+	"github.com/qualithm/ratatoskr-go/internal/obs"
 	"github.com/qualithm/ratatoskr-go/internal/runner"
 	"github.com/qualithm/ratatoskr-go/pkg/catalog"
 	"github.com/qualithm/ratatoskr-go/pkg/finding"
@@ -34,6 +35,7 @@ func testEnv(t *testing.T) (*cli.Env, *bytes.Buffer, *bytes.Buffer) {
 	env.Stderr = stderr
 	env.Stdin = strings.NewReader("")
 	env.Now = func() time.Time { return time.Date(2026, 5, 23, 0, 0, 0, 0, time.UTC) }
+	env.Logger = obs.New(obs.Options{Writer: stderr})
 	return &env, stdout, stderr
 }
 
