@@ -239,6 +239,7 @@ func TestExtractDashboard_GrafanaTemplateVarFunctions(t *testing.T) {
       "templating": {
         "list": [
           {"name": "ns",    "type": "query", "datasource": {"type": "prometheus"}, "query": "label_values(kube_pod_info, namespace)"},
+          {"name": "ns2",   "type": "query", "datasource": {"type": "prometheus"}, "query": "label_values(up{job=~\".*metrics-server.*\", cluster=~\"$cluster\"}, namespace)"},
           {"name": "lab",   "type": "query", "datasource": {"type": "prometheus"}, "query": "label_values(namespace)"},
           {"name": "lab2",  "type": "query", "datasource": {"type": "prometheus"}, "query": "label_names()"},
           {"name": "lab3",  "type": "query", "datasource": {"type": "prometheus"}, "query": "metrics(node_.*)"},
@@ -250,8 +251,8 @@ func TestExtractDashboard_GrafanaTemplateVarFunctions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(r.Variables) != 5 {
-		t.Fatalf("want 5 variables, got %d", len(r.Variables))
+	if len(r.Variables) != 6 {
+		t.Fatalf("want 6 variables, got %d", len(r.Variables))
 	}
 	for _, v := range r.Variables {
 		if v.Error != "" {
@@ -263,19 +264,25 @@ func TestExtractDashboard_GrafanaTemplateVarFunctions(t *testing.T) {
 	if ns.PromQL == nil || !contains(ns.PromQL.MetricRefs, "kube_pod_info") {
 		t.Errorf("ns var: want PromQL with metric kube_pod_info, got %+v", ns)
 	}
+	// label_values(metric{matchers,with,commas}, label): inner selector must
+	// be preserved intact across commas inside braces.
+	ns2 := r.Variables[1]
+	if ns2.PromQL == nil || !contains(ns2.PromQL.MetricRefs, "up") {
+		t.Errorf("ns2 var: want PromQL with metric up, got %+v", ns2)
+	}
 	// label_values(label): no inner expression → PromQL nil.
-	if r.Variables[1].PromQL != nil {
-		t.Errorf("lab var: want PromQL nil (no inner expression), got %+v", r.Variables[1].PromQL)
+	if r.Variables[2].PromQL != nil {
+		t.Errorf("lab var: want PromQL nil (no inner expression), got %+v", r.Variables[2].PromQL)
 	}
 	// label_names() and metrics(...): no inner expression → PromQL nil.
-	if r.Variables[2].PromQL != nil {
-		t.Errorf("lab2 var: want PromQL nil, got %+v", r.Variables[2].PromQL)
-	}
 	if r.Variables[3].PromQL != nil {
-		t.Errorf("lab3 var: want PromQL nil, got %+v", r.Variables[3].PromQL)
+		t.Errorf("lab2 var: want PromQL nil, got %+v", r.Variables[3].PromQL)
+	}
+	if r.Variables[4].PromQL != nil {
+		t.Errorf("lab3 var: want PromQL nil, got %+v", r.Variables[4].PromQL)
 	}
 	// query_result(expr): inner is the wrapped PromQL.
-	qr := r.Variables[4]
+	qr := r.Variables[5]
 	if qr.PromQL == nil || !contains(qr.PromQL.MetricRefs, "http_requests_total") {
 		t.Errorf("qr var: want PromQL with metric http_requests_total, got %+v", qr)
 	}

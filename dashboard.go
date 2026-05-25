@@ -308,6 +308,14 @@ func unwrapPromQLVariableQuery(expr string) (inner string, ok bool) {
 // call of the form IDENT(arg, arg, ...) spanning the whole input, with
 // balanced parens. Arguments are returned verbatim (with surrounding
 // whitespace preserved); callers should trim as needed.
+//
+// Top-level commas (those that separate arguments) are detected with
+// awareness of PromQL syntax: commas inside nested parens, braces, or
+// brackets do not split arguments, and commas inside single-, double-, or
+// backtick-quoted strings are likewise ignored. This is required because
+// Grafana label-variable queries commonly embed a label-matcher selector
+// with multiple matchers as the first argument, e.g.
+// `label_values(up{job="x", cluster=~"$c"}, namespace)`.
 func splitGrafanaVarCall(s string) (name string, args []string, ok bool) {
 	i := 0
 	for i < len(s) && isGrafanaIdentByte(s[i]) {
@@ -317,15 +325,32 @@ func splitGrafanaVarCall(s string) (name string, args []string, ok bool) {
 		return "", nil, false
 	}
 	name = s[:i]
-	depth := 0
+	parenDepth := 0
+	braceDepth := 0
+	bracketDepth := 0
+	var quote byte // 0 when not in a string, else '"', '\'', or '`'
 	argStart := i + 1
 	for j := i; j < len(s); j++ {
-		switch s[j] {
+		c := s[j]
+		if quote != 0 {
+			// Inside a quoted string: handle escape only for non-raw quotes.
+			if c == '\\' && quote != '`' && j+1 < len(s) {
+				j++
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'', '`':
+			quote = c
 		case '(':
-			depth++
+			parenDepth++
 		case ')':
-			depth--
-			if depth == 0 {
+			parenDepth--
+			if parenDepth == 0 {
 				if strings.TrimSpace(s[j+1:]) != "" {
 					return "", nil, false
 				}
@@ -334,8 +359,20 @@ func splitGrafanaVarCall(s string) (name string, args []string, ok bool) {
 				}
 				return name, args, true
 			}
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
 		case ',':
-			if depth == 1 {
+			if parenDepth == 1 && braceDepth == 0 && bracketDepth == 0 {
 				args = append(args, s[argStart:j])
 				argStart = j + 1
 			}
