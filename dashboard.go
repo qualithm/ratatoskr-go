@@ -247,7 +247,14 @@ func extractInto(dv *DashboardVariable, expr string) {
 	}
 	switch dv.Language {
 	case "promql":
-		res, err := ExtractPromQL(norm)
+		inner, ok := unwrapPromQLVariableQuery(norm)
+		if !ok {
+			// Grafana template-var function with no extractable PromQL
+			// expression (e.g. label_values(label), metrics(regex),
+			// label_names()). Nothing to validate; leave PromQL nil.
+			return
+		}
+		res, err := ExtractPromQL(inner)
 		dv.PromQL = &res
 		if err != nil {
 			dv.Error = err.Error()
@@ -259,6 +266,89 @@ func extractInto(dv *DashboardVariable, expr string) {
 			dv.Error = err.Error()
 		}
 	}
+}
+
+// unwrapPromQLVariableQuery strips a Grafana template-variable query wrapper
+// (label_values, query_result, metrics, label_names) from expr and returns
+// the inner PromQL expression to validate. When expr is not a wrapper call
+// it is returned unchanged with ok=true. When the wrapper has no extractable
+// inner expression (e.g. label_values(label) with a single label argument,
+// metrics(regex), label_names()), ok=false and the caller should skip
+// PromQL parsing entirely.
+//
+// These functions are Grafana templating syntax, not PromQL, and parsing
+// them as PromQL produces spurious E001 findings (issue: dashboard template
+// variables flagged as PromQL parse errors).
+func unwrapPromQLVariableQuery(expr string) (inner string, ok bool) {
+	s := strings.TrimSpace(expr)
+	name, args, isCall := splitGrafanaVarCall(s)
+	if !isCall {
+		return expr, true
+	}
+	switch name {
+	case "label_values":
+		// label_values(label) → no metric selector to validate.
+		// label_values(metric_selector, label) → first arg is PromQL.
+		if len(args) >= 2 {
+			return strings.TrimSpace(args[0]), true
+		}
+		return "", false
+	case "query_result":
+		if len(args) >= 1 {
+			return strings.TrimSpace(args[0]), true
+		}
+		return "", false
+	case "metrics", "label_names":
+		return "", false
+	}
+	return expr, true
+}
+
+// splitGrafanaVarCall returns (name, args, true) iff s is exactly a single
+// call of the form IDENT(arg, arg, ...) spanning the whole input, with
+// balanced parens. Arguments are returned verbatim (with surrounding
+// whitespace preserved); callers should trim as needed.
+func splitGrafanaVarCall(s string) (name string, args []string, ok bool) {
+	i := 0
+	for i < len(s) && isGrafanaIdentByte(s[i]) {
+		i++
+	}
+	if i == 0 || i >= len(s) || s[i] != '(' {
+		return "", nil, false
+	}
+	name = s[:i]
+	depth := 0
+	argStart := i + 1
+	for j := i; j < len(s); j++ {
+		switch s[j] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				if strings.TrimSpace(s[j+1:]) != "" {
+					return "", nil, false
+				}
+				if j > argStart || len(args) > 0 {
+					args = append(args, s[argStart:j])
+				}
+				return name, args, true
+			}
+		case ',':
+			if depth == 1 {
+				args = append(args, s[argStart:j])
+				argStart = j + 1
+			}
+		}
+	}
+	return "", nil, false
+}
+
+func isGrafanaIdentByte(b byte) bool {
+	return b == '_' ||
+		(b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9')
 }
 
 // datasourceType extracts the datasource type from the polymorphic

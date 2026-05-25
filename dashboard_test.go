@@ -226,3 +226,57 @@ func TestExtractDashboard_NormalisesVariables(t *testing.T) {
 		t.Fatalf("panel 3 target B: want promql via heuristic, got %q", unkProm.Language)
 	}
 }
+
+// TestExtractDashboard_GrafanaTemplateVarFunctions verifies that Grafana
+// template-variable query functions (label_values, query_result, metrics,
+// label_names) are not parsed as PromQL and therefore do not produce
+// spurious parse errors (E001).
+func TestExtractDashboard_GrafanaTemplateVarFunctions(t *testing.T) {
+	t.Parallel()
+	const doc = `{
+      "title": "tv",
+      "panels": [],
+      "templating": {
+        "list": [
+          {"name": "ns",    "type": "query", "datasource": {"type": "prometheus"}, "query": "label_values(kube_pod_info, namespace)"},
+          {"name": "lab",   "type": "query", "datasource": {"type": "prometheus"}, "query": "label_values(namespace)"},
+          {"name": "lab2",  "type": "query", "datasource": {"type": "prometheus"}, "query": "label_names()"},
+          {"name": "lab3",  "type": "query", "datasource": {"type": "prometheus"}, "query": "metrics(node_.*)"},
+          {"name": "qr",    "type": "query", "datasource": {"type": "prometheus"}, "query": "query_result(sum(rate(http_requests_total[5m])))"}
+        ]
+      }
+    }`
+	r, err := ratatoskr.ExtractDashboard(strings.NewReader(doc))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(r.Variables) != 5 {
+		t.Fatalf("want 5 variables, got %d", len(r.Variables))
+	}
+	for _, v := range r.Variables {
+		if v.Error != "" {
+			t.Errorf("variable %q: unexpected parse error %q", v.Name, v.Error)
+		}
+	}
+	// label_values(metric, label): inner is "kube_pod_info" → PromQL set, MetricRefs includes it.
+	ns := r.Variables[0]
+	if ns.PromQL == nil || !contains(ns.PromQL.MetricRefs, "kube_pod_info") {
+		t.Errorf("ns var: want PromQL with metric kube_pod_info, got %+v", ns)
+	}
+	// label_values(label): no inner expression → PromQL nil.
+	if r.Variables[1].PromQL != nil {
+		t.Errorf("lab var: want PromQL nil (no inner expression), got %+v", r.Variables[1].PromQL)
+	}
+	// label_names() and metrics(...): no inner expression → PromQL nil.
+	if r.Variables[2].PromQL != nil {
+		t.Errorf("lab2 var: want PromQL nil, got %+v", r.Variables[2].PromQL)
+	}
+	if r.Variables[3].PromQL != nil {
+		t.Errorf("lab3 var: want PromQL nil, got %+v", r.Variables[3].PromQL)
+	}
+	// query_result(expr): inner is the wrapped PromQL.
+	qr := r.Variables[4]
+	if qr.PromQL == nil || !contains(qr.PromQL.MetricRefs, "http_requests_total") {
+		t.Errorf("qr var: want PromQL with metric http_requests_total, got %+v", qr)
+	}
+}
