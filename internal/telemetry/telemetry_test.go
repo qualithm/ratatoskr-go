@@ -28,6 +28,38 @@ func TestRecordFindingsMetric(t *testing.T) {
 	}
 }
 
+func TestRecordLastRunFindings(t *testing.T) {
+	t.Parallel()
+	tel := telemetry.New(telemetry.BuildInfo{Version: "test"})
+	tel.RecordLastRunFindings([]finding.Finding{
+		{Code: finding.CodeMetricUnknown, Severity: finding.SeverityError, Category: finding.CategoryCatalog},
+		{Code: finding.CodeMetricUnknown, Severity: finding.SeverityError, Category: finding.CategoryCatalog},
+		{Code: finding.CodeForLessThanInterval, Severity: finding.SeverityWarning, Category: finding.CategoryLint},
+	})
+	body := scrape(t, tel)
+	if !strings.Contains(body, `ratatoskr_validation_last_run_findings{severity="error"} 2`) {
+		t.Fatalf("missing error gauge:\n%s", body)
+	}
+	if !strings.Contains(body, `ratatoskr_validation_last_run_findings{severity="warning"} 1`) {
+		t.Fatalf("missing warning gauge:\n%s", body)
+	}
+	if !strings.Contains(body, `ratatoskr_validation_last_run_findings{severity="info"} 0`) {
+		t.Fatalf("missing zeroed info gauge:\n%s", body)
+	}
+
+	// Second call must overwrite, not accumulate.
+	tel.RecordLastRunFindings([]finding.Finding{
+		{Code: finding.CodeMetricUnknown, Severity: finding.SeverityError, Category: finding.CategoryCatalog},
+	})
+	body = scrape(t, tel)
+	if !strings.Contains(body, `ratatoskr_validation_last_run_findings{severity="error"} 1`) {
+		t.Fatalf("gauge should overwrite to 1, got:\n%s", body)
+	}
+	if !strings.Contains(body, `ratatoskr_validation_last_run_findings{severity="warning"} 0`) {
+		t.Fatalf("warning gauge should reset to 0, got:\n%s", body)
+	}
+}
+
 func TestRecordRun(t *testing.T) {
 	t.Parallel()
 	tel := telemetry.New(telemetry.BuildInfo{Version: "test"})
@@ -88,6 +120,7 @@ func TestNilSafe(t *testing.T) {
 	t.Parallel()
 	var tel *telemetry.Telemetry
 	tel.RecordFindings([]finding.Finding{{Code: finding.CodeMetricUnknown, Severity: finding.SeverityError}})
+	tel.RecordLastRunFindings([]finding.Finding{{Code: finding.CodeMetricUnknown, Severity: finding.SeverityError}})
 	tel.RecordRun("clean", nil, 0)
 	tel.RecordPrewarm(0.1)
 	tel.RecordWatchIteration()
