@@ -3,13 +3,13 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/qualithm/ratatoskr-go/internal/obs"
 	"github.com/qualithm/ratatoskr-go/internal/runner"
 	"github.com/qualithm/ratatoskr-go/internal/telemetry"
 	"github.com/qualithm/ratatoskr-go/internal/watcher"
@@ -28,24 +28,42 @@ func runWatch(parent context.Context, env Env, cfg runner.Config, in runner.Inpu
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	tel := telemetry.New()
+	tel := telemetry.New(env.BuildInfo)
 	httpDone, httpErr, err := maybeStartTelemetryServer(ctx, env, f.listen, tel)
 	if err != nil {
-		_, _ = fmt.Fprintf(env.Stderr, "listen: %v\n", err)
+		env.Logger.Error("telemetry listener failed",
+			"event", obs.EventError, "stage", "listen", "error", err.Error())
 		return ExitErrors
 	}
 
+	iteration := 0
 	onResult := func(res *runner.Result, runErr error) {
+		iteration++
+		tel.RecordWatchIteration()
 		if runErr != nil {
-			_, _ = fmt.Fprintf(env.Stderr, "watch run: %v\n", runErr)
-			tel.RecordRun("failed", 0, 0)
+			env.Logger.Error("watch run failed",
+				"event", obs.EventWatchIteration, "iteration", iteration,
+				"outcome", "failed", "error", runErr.Error())
+			tel.RecordRun("failed", nil, 0)
 			return
 		}
 		if writeErr := writeReport(env, f.output, format, res); writeErr != nil {
-			_, _ = fmt.Fprintf(env.Stderr, "watch write: %v\n", writeErr)
+			env.Logger.Error("watch write failed",
+				"event", obs.EventError, "stage", "write", "error", writeErr.Error())
 		}
+		outcome := telemetry.OutcomeFor(res.Findings)
 		tel.RecordFindings(res.Findings)
-		tel.RecordRun(telemetry.OutcomeFor(res.Findings), res.FilesScanned, 0)
+		tel.RecordRun(outcome, res.FilesScannedByKind, res.Duration.Seconds())
+		tel.RecordPrewarm(res.PrewarmDuration.Seconds())
+		env.Logger.Info("watch iteration completed",
+			"event", obs.EventWatchIteration,
+			"iteration", iteration,
+			"outcome", outcome,
+			"findings", len(res.Findings),
+			"files_scanned", res.FilesScanned,
+			"duration_ms", res.Duration.Milliseconds(),
+			"prewarm_ms", res.PrewarmDuration.Milliseconds(),
+		)
 	}
 
 	w, err := watcher.New(watcher.Config{
@@ -57,7 +75,8 @@ func runWatch(parent context.Context, env Env, cfg runner.Config, in runner.Inpu
 		CatalogRefresh: f.catalogRefresh,
 	})
 	if err != nil {
-		_, _ = fmt.Fprintf(env.Stderr, "watcher: %v\n", err)
+		env.Logger.Error("watcher init failed",
+			"event", obs.EventError, "stage", "watcher", "error", err.Error())
 		return ExitErrors
 	}
 
@@ -70,13 +89,15 @@ func runWatch(parent context.Context, env Env, cfg runner.Config, in runner.Inpu
 		}
 	}
 	if runErr != nil {
-		_, _ = fmt.Fprintf(env.Stderr, "watcher: %v\n", runErr)
+		env.Logger.Error("watcher exited with error",
+			"event", obs.EventError, "stage", "watcher", "error", runErr.Error())
 		return ExitErrors
 	}
 	select {
 	case err := <-httpErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			_, _ = fmt.Fprintf(env.Stderr, "listen: %v\n", err)
+			env.Logger.Error("telemetry server exited with error",
+				"event", obs.EventError, "stage", "listen", "error", err.Error())
 			return ExitErrors
 		}
 	default:
@@ -124,6 +145,7 @@ func maybeStartTelemetryServer(ctx context.Context, env Env, addr string, tel *t
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()
-	_, _ = fmt.Fprintf(env.Stderr, "telemetry listening on %s\n", ln.Addr())
+	env.Logger.Info("telemetry server listening",
+		"event", obs.EventTelemetryListen, "addr", ln.Addr().String())
 	return done, errCh, nil
 }

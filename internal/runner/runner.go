@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	ratatoskr "github.com/qualithm/ratatoskr-go"
 	"github.com/qualithm/ratatoskr-go/pkg/catalog"
@@ -64,6 +65,14 @@ type Config struct {
 	PrewarmParallelism int
 }
 
+// File-kind labels used in [Result.FilesScannedByKind] and in the
+// downstream ratatoskr_validation_files_scanned_total{kind=...} metric.
+const (
+	KindPromRules  = "prometheus_rules"
+	KindLokiRules  = "loki_rules"
+	KindDashboards = "dashboards"
+)
+
 // Result is the output of a single [Run].
 type Result struct {
 	// Findings is the deterministic, sorted list of findings.
@@ -71,12 +80,21 @@ type Result struct {
 	// FilesScanned is the number of input files successfully read,
 	// regardless of whether they parsed.
 	FilesScanned int
+	// FilesScannedByKind is FilesScanned broken down by input kind.
+	// Keys are one of KindPromRules, KindLokiRules, KindDashboards.
+	FilesScannedByKind map[string]int
+	// Duration is the wall-clock time the run took. Set by [Run].
+	Duration time.Duration
+	// PrewarmDuration is the time spent priming the catalog cache.
+	// Zero when no checker was configured or prewarm was disabled.
+	PrewarmDuration time.Duration
 }
 
 // Run executes the full pipeline. The returned error is non-nil only for
 // fatal problems (path globbing, network failure during prewarm); per-file
 // parse errors are emitted as findings on [Result.Findings].
 func Run(ctx context.Context, cfg Config, in Inputs) (*Result, error) {
+	start := time.Now()
 	cfg = withDefaults(cfg)
 
 	promFiles, lokiFiles, dashboards, parseFindings, scanned, err := load(in)
@@ -88,16 +106,25 @@ func Run(ctx context.Context, cfg Config, in Inputs) (*Result, error) {
 	out = append(out, parseFindings...)
 	out = append(out, lint.LintAll(cfg.Lint, promFiles, lokiFiles)...)
 
+	var prewarmDur time.Duration
 	if cfg.Checker != nil {
-		catalogFindings, err := runCatalog(ctx, cfg, promFiles, lokiFiles, dashboards)
+		catalogFindings, dur, err := runCatalog(ctx, cfg, promFiles, lokiFiles, dashboards)
 		if err != nil {
 			return nil, err
 		}
+		prewarmDur = dur
 		out = append(out, catalogFindings...)
 	}
 
 	finding.Sort(out)
-	return &Result{Findings: out, FilesScanned: scanned}, nil
+	total := scanned[KindPromRules] + scanned[KindLokiRules] + scanned[KindDashboards]
+	return &Result{
+		Findings:           out,
+		FilesScanned:       total,
+		FilesScannedByKind: scanned,
+		Duration:           time.Since(start),
+		PrewarmDuration:    prewarmDur,
+	}, nil
 }
 
 func withDefaults(cfg Config) Config {
@@ -122,24 +149,25 @@ func load(in Inputs) (
 	lokiFiles []lint.LogQLFile,
 	dashboards []ratatoskr.DashboardResult,
 	findings []finding.Finding,
-	scanned int,
+	scanned map[string]int,
 	err error,
 ) {
+	scanned = map[string]int{KindPromRules: 0, KindLokiRules: 0, KindDashboards: 0}
 	promPaths, err := expand(in.PromRulesPaths, ".yaml", ".yml")
 	if err != nil {
-		return nil, nil, nil, nil, 0, err
+		return nil, nil, nil, nil, nil, err
 	}
 	lokiPaths, err := expand(in.LokiRulesPaths, ".yaml", ".yml")
 	if err != nil {
-		return nil, nil, nil, nil, 0, err
+		return nil, nil, nil, nil, nil, err
 	}
 	dashPaths, err := expand(in.DashboardPaths, ".json")
 	if err != nil {
-		return nil, nil, nil, nil, 0, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	for _, p := range promPaths {
-		scanned++
+		scanned[KindPromRules]++
 		f, err := os.Open(p) //#nosec G304 -- path comes from operator-supplied rule globs
 		if err != nil {
 			findings = append(findings, fileReadFinding(p, err))
@@ -157,7 +185,7 @@ func load(in Inputs) (
 	}
 
 	for _, p := range lokiPaths {
-		scanned++
+		scanned[KindLokiRules]++
 		f, err := os.Open(p) //#nosec G304 -- path comes from operator-supplied rule globs
 		if err != nil {
 			findings = append(findings, fileReadFinding(p, err))
@@ -175,7 +203,7 @@ func load(in Inputs) (
 	}
 
 	for _, p := range dashPaths {
-		scanned++
+		scanned[KindDashboards]++
 		f, err := os.Open(p) //#nosec G304 -- path comes from operator-supplied dashboard globs
 		if err != nil {
 			findings = append(findings, fileReadFinding(p, err))
@@ -243,14 +271,16 @@ func expand(paths []string, allowedExt ...string) ([]string, error) {
 
 // runCatalog prewarms (when enabled) then runs CheckPromQL / CheckLogQL
 // over every extracted expression. Sources are populated from the
-// rule-file or dashboard the expression came from.
+// rule-file or dashboard the expression came from. It also returns the
+// wall-clock time spent in the parallel prewarm phase (zero when
+// prewarm was disabled).
 func runCatalog(
 	ctx context.Context,
 	cfg Config,
 	promFiles []lint.PromQLFile,
 	lokiFiles []lint.LogQLFile,
 	dashboards []ratatoskr.DashboardResult,
-) ([]finding.Finding, error) {
+) ([]finding.Finding, time.Duration, error) {
 	promExprs := []taggedPromQL{}
 	for _, f := range promFiles {
 		for _, g := range f.Result.Groups {
@@ -310,6 +340,7 @@ func runCatalog(
 		}
 	}
 
+	var prewarmDur time.Duration
 	if cfg.Prewarm {
 		in := catalog.PrewarmInputs{
 			PromQL: make([]ratatoskr.Result, 0, len(promExprs)),
@@ -321,8 +352,11 @@ func runCatalog(
 		for _, e := range lokiExprs {
 			in.LogQL = append(in.LogQL, e.res)
 		}
-		if err := catalog.Prewarm(ctx, cfg.Checker, in, cfg.PrewarmParallelism); err != nil {
-			return nil, fmt.Errorf("runner: prewarm: %w", err)
+		prewarmStart := time.Now()
+		err := catalog.Prewarm(ctx, cfg.Checker, in, cfg.PrewarmParallelism)
+		prewarmDur = time.Since(prewarmStart)
+		if err != nil {
+			return nil, prewarmDur, fmt.Errorf("runner: prewarm: %w", err)
 		}
 	}
 
@@ -330,18 +364,18 @@ func runCatalog(
 	for _, e := range promExprs {
 		fs, err := cfg.Checker.CheckPromQL(ctx, e.res, e.source)
 		if err != nil {
-			return nil, fmt.Errorf("runner: catalog check (%s): %w", e.source.File, err)
+			return nil, prewarmDur, fmt.Errorf("runner: catalog check (%s): %w", e.source.File, err)
 		}
 		out = append(out, fs...)
 	}
 	for _, e := range lokiExprs {
 		fs, err := cfg.Checker.CheckLogQL(ctx, e.res, e.source)
 		if err != nil {
-			return nil, fmt.Errorf("runner: catalog check (%s): %w", e.source.File, err)
+			return nil, prewarmDur, fmt.Errorf("runner: catalog check (%s): %w", e.source.File, err)
 		}
 		out = append(out, fs...)
 	}
-	return out, nil
+	return out, prewarmDur, nil
 }
 
 type taggedPromQL struct {

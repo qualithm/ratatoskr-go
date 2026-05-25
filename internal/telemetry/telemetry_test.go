@@ -13,7 +13,7 @@ import (
 
 func TestRecordFindingsMetric(t *testing.T) {
 	t.Parallel()
-	tel := telemetry.New()
+	tel := telemetry.New(telemetry.BuildInfo{Version: "test"})
 	tel.RecordFindings([]finding.Finding{
 		{Code: finding.CodeMetricUnknown, Severity: finding.SeverityError, Category: finding.CategoryCatalog},
 		{Code: finding.CodeMetricUnknown, Severity: finding.SeverityError, Category: finding.CategoryCatalog},
@@ -30,23 +30,45 @@ func TestRecordFindingsMetric(t *testing.T) {
 
 func TestRecordRun(t *testing.T) {
 	t.Parallel()
-	tel := telemetry.New()
-	tel.RecordRun("clean", 7, 0.42)
+	tel := telemetry.New(telemetry.BuildInfo{Version: "test"})
+	tel.RecordRun("clean", map[string]int{"prometheus_rules": 5, "dashboards": 2}, 0.42)
 	body := scrape(t, tel)
 	if !strings.Contains(body, `ratatoskr_validation_runs_total{outcome="clean"} 1`) {
 		t.Fatalf("missing runs counter:\n%s", body)
 	}
-	if !strings.Contains(body, `ratatoskr_validation_files_scanned_total 7`) {
-		t.Fatalf("missing files counter:\n%s", body)
+	if !strings.Contains(body, `ratatoskr_validation_files_scanned_total{kind="prometheus_rules"} 5`) {
+		t.Fatalf("missing prom rules counter:\n%s", body)
 	}
-	if !strings.Contains(body, `ratatoskr_validation_last_run_duration_seconds 0.42`) {
-		t.Fatalf("missing duration:\n%s", body)
+	if !strings.Contains(body, `ratatoskr_validation_files_scanned_total{kind="dashboards"} 2`) {
+		t.Fatalf("missing dashboards counter:\n%s", body)
+	}
+	if !strings.Contains(body, `ratatoskr_validation_run_duration_seconds_count 1`) {
+		t.Fatalf("missing duration histogram count:\n%s", body)
+	}
+	if !strings.Contains(body, `ratatoskr_validation_run_duration_seconds_sum 0.42`) {
+		t.Fatalf("missing duration histogram sum:\n%s", body)
+	}
+}
+
+func TestRecordPrewarmAndWatch(t *testing.T) {
+	t.Parallel()
+	tel := telemetry.New(telemetry.BuildInfo{Version: "test"})
+	tel.RecordPrewarm(0.25)
+	tel.RecordPrewarm(0) // ignored
+	tel.RecordWatchIteration()
+	tel.RecordWatchIteration()
+	body := scrape(t, tel)
+	if !strings.Contains(body, `ratatoskr_catalog_prewarm_duration_seconds_count 1`) {
+		t.Fatalf("expected one prewarm observation:\n%s", body)
+	}
+	if !strings.Contains(body, `ratatoskr_watch_iterations_total 2`) {
+		t.Fatalf("expected two watch iterations:\n%s", body)
 	}
 }
 
 func TestHealthzAndReadyz(t *testing.T) {
 	t.Parallel()
-	tel := telemetry.New()
+	tel := telemetry.New(telemetry.BuildInfo{Version: "test"})
 	srv := httptest.NewServer(tel.Handler())
 	t.Cleanup(srv.Close)
 
@@ -66,8 +88,31 @@ func TestNilSafe(t *testing.T) {
 	t.Parallel()
 	var tel *telemetry.Telemetry
 	tel.RecordFindings([]finding.Finding{{Code: finding.CodeMetricUnknown, Severity: finding.SeverityError}})
-	tel.RecordRun("clean", 0, 0)
+	tel.RecordRun("clean", nil, 0)
+	tel.RecordPrewarm(0.1)
+	tel.RecordWatchIteration()
 	tel.SetReady(true)
+}
+
+func TestBuildInfoMetric(t *testing.T) {
+	t.Parallel()
+	tel := telemetry.New(telemetry.BuildInfo{Version: "v1.2.3", Commit: "abc123", GoVersion: "go1.22"})
+	body := scrape(t, tel)
+	if !strings.Contains(body, `ratatoskr_build_info{commit="abc123",go_version="go1.22",version="v1.2.3"} 1`) {
+		t.Fatalf("missing build_info:\n%s", body)
+	}
+}
+
+func TestBuildInfoDefaultsGoVersion(t *testing.T) {
+	t.Parallel()
+	tel := telemetry.New(telemetry.BuildInfo{})
+	body := scrape(t, tel)
+	if !strings.Contains(body, `ratatoskr_build_info{`) {
+		t.Fatalf("missing build_info:\n%s", body)
+	}
+	if !strings.Contains(body, `version="dev"`) {
+		t.Fatalf("expected default version=dev:\n%s", body)
+	}
 }
 
 func TestOutcomeFor(t *testing.T) {
