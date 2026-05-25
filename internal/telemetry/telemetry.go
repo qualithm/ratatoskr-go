@@ -43,6 +43,7 @@ type BuildInfo struct {
 type Telemetry struct {
 	reg             *prometheus.Registry
 	findingsTotal   *prometheus.CounterVec
+	lastRunFindings *prometheus.GaugeVec
 	runsTotal       *prometheus.CounterVec
 	filesScanned    *prometheus.CounterVec
 	runDuration     prometheus.Histogram
@@ -68,6 +69,10 @@ func New(bi BuildInfo) *Telemetry {
 			Name: "ratatoskr_validation_findings_total",
 			Help: "Total findings emitted by Ratatoskr validation, by code/severity/category.",
 		}, []string{"code", "severity", "category"}),
+		lastRunFindings: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ratatoskr_validation_last_run_findings",
+			Help: "Number of findings emitted by the most recent successful Ratatoskr validation run, by severity. Updated on every non-failed run.",
+		}, []string{"severity"}),
 		runsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "ratatoskr_validation_runs_total",
 			Help: "Total Ratatoskr validation runs, by outcome (clean/warnings/errors/failed).",
@@ -97,6 +102,7 @@ func New(bi BuildInfo) *Telemetry {
 	}
 	reg.MustRegister(
 		t.findingsTotal,
+		t.lastRunFindings,
 		t.runsTotal,
 		t.filesScanned,
 		t.runDuration,
@@ -117,6 +123,32 @@ func (t *Telemetry) RecordFindings(findings []finding.Finding) {
 	}
 	for _, f := range findings {
 		t.findingsTotal.WithLabelValues(string(f.Code), string(f.Severity), string(f.Category)).Inc()
+	}
+}
+
+// RecordLastRunFindings sets the ratatoskr_validation_last_run_findings
+// gauge to reflect the severity breakdown of the most recent run.
+//
+// Unlike [RecordFindings] (a monotonic counter that powers rates), this
+// gauge answers "how many findings did the latest run produce?" — the
+// number a stat panel titled "Findings (last run)" should display.
+//
+// Severities that produced zero findings are explicitly reset to 0 so
+// stale series from a previous run don't linger.
+func (t *Telemetry) RecordLastRunFindings(findings []finding.Finding) {
+	if t == nil {
+		return
+	}
+	counts := map[string]int{
+		string(finding.SeverityError):   0,
+		string(finding.SeverityWarning): 0,
+		string(finding.SeverityInfo):    0,
+	}
+	for _, f := range findings {
+		counts[string(f.Severity)]++
+	}
+	for sev, n := range counts {
+		t.lastRunFindings.WithLabelValues(sev).Set(float64(n))
 	}
 }
 
