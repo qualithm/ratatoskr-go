@@ -5,6 +5,9 @@
 BINARY_NAME ?= ratatoskr
 PKG         := ./...
 COVER_FILE  := coverage.out
+GOVULNCHECK_VERSION := v1.3.0
+GOSEC_VERSION := v2.26.1
+GOSEC_ARGS ?= -exclude-dir=examples ./...
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      ?= $(shell git rev-parse HEAD 2>/dev/null || echo none)
 LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
@@ -69,6 +72,10 @@ tidy-check: ## Verify go.mod is tidy
 audit: ## Run vulnerability scan (govulncheck)
 	govulncheck $(PKG)
 
+.PHONY: gosec
+gosec: ## Run gosec scan
+	gosec $(GOSEC_ARGS)
+
 .PHONY: docs
 docs: ## Serve godoc on :6060
 	@command -v pkgsite >/dev/null 2>&1 || go install golang.org/x/pkgsite/cmd/pkgsite@latest
@@ -82,7 +89,8 @@ clean: ## Remove build artefacts
 install-tools: ## Install dev tooling
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install golang.org/x/tools/cmd/goimports@latest
-	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
 
 .PHONY: ci
 ci: fmt-check vet lint test ## Run the same checks as CI

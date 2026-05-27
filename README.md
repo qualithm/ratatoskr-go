@@ -132,10 +132,12 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 {
   "expr": "<original input>",
   "metricRefs": ["sorted", "unique", "metric", "names"],
-  "selectors": [{ "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." }],
+  "selectors": [
+    { "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." },
+  ],
   "atModifiers": [1717000000.0], // optional
   "functions": ["rate", "sum"], // optional
-  "error": "parse: ..." // CLI only, when batch input has bad expressions
+  "error": "parse: ...", // CLI only, when batch input has bad expressions
 }
 ```
 
@@ -151,6 +153,9 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 make install-tools
 ```
 
+This installs local development tooling, including `golangci-lint`, `goimports`, and
+`govulncheck`.
+
 ### Building & Testing
 
 ```bash
@@ -158,6 +163,24 @@ make build
 make test
 make test-coverage
 make lint
+```
+
+### Security Tooling
+
+```bash
+make audit   # govulncheck
+make gosec   # standalone gosec scan
+make lint    # golangci-lint (includes gosec checks via .golangci.yaml)
+```
+
+Daily CI security audit runs both tools in `.github/workflows/audit.yaml`.
+
+Install tools manually (if you are not using `make install-tools`):
+
+```bash
+go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+go install github.com/securego/gosec/v2/cmd/gosec@v2.26.1
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 ```
 
 ### Docker
