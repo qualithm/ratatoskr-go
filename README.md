@@ -153,6 +153,15 @@ make install-tools
 
 This installs local development tooling, including `golangci-lint`, `goimports`, and `govulncheck`.
 
+> **Note:** Tools are installed to `$GOPATH/bin` (typically `~/go/bin`). Make sure that directory is
+> on your `$PATH`, otherwise the installed binaries won't be found. Add this to your shell config if
+> needed:
+>
+> ```bash
+> echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+> source ~/.zshrc
+> ```
+
 ### Building & Testing
 
 ```bash
