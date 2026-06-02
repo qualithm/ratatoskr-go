@@ -562,7 +562,7 @@ func TestOutputFileOpenError(t *testing.T) {
 func TestExitZeroAlwaysOKEvenWithWarnings(t *testing.T) {
 	t.Parallel()
 	// no-lint-defaults turns off the chart defaults so we get pure
-	// warning behaviour from --require-severity=false.
+	// warning behavior from --require-severity=false.
 	dir := t.TempDir()
 	writeRule(t, dir, "ok.yaml", `groups: []`)
 	env, _, _ := testEnv(t)
@@ -597,7 +597,7 @@ func TestDeadlineCancelsContext(t *testing.T) {
 		t.Fatalf("code=%d", code)
 	}
 	if gotCtxErr == nil {
-		t.Fatal("expected ctx to be cancelled by deadline")
+		t.Fatal("expected ctx to be canceled by deadline")
 	}
 }
 

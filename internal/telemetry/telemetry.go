@@ -97,7 +97,7 @@ func New(bi BuildInfo) *Telemetry {
 		}),
 		buildInfo: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "ratatoskr_build_info",
-			Help: "Constant 1 gauge labelled with the running build's identifying information.",
+			Help: "Constant 1 gauge labeled with the running build's identifying information.",
 		}, []string{"version", "commit", "go_version"}),
 	}
 	reg.MustRegister(

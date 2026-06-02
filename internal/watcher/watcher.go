@@ -15,7 +15,7 @@
 //	    CatalogRefresh: 10 * time.Minute,
 //	})
 //	if err != nil { ... }
-//	w.Run(ctx) // blocks until ctx is cancelled
+//	w.Run(ctx) // blocks until ctx is canceled
 //
 // The watcher always performs an initial run before entering the event
 // loop, so callers see a stable result by the time SetReady(true) fires
@@ -141,7 +141,7 @@ func New(cfg Config) (*Watcher, error) {
 	return &Watcher{cfg: cfg, clock: cfg.Clock, dirs: dirs}, nil
 }
 
-// Run executes the initial pass, then blocks until ctx is cancelled,
+// Run executes the initial pass, then blocks until ctx is canceled,
 // re-running on debounced fsnotify events and on the catalog-refresh
 // ticker. The returned error is nil on clean shutdown; non-nil errors
 // always wrap the underlying fsnotify or context failure (per-pass
