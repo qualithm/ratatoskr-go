@@ -12,7 +12,7 @@
 
 Any code change should include review of:
 
-- **Tests** - update existing tests, add new tests for new behaviour
+- **Tests** - update existing tests, add new tests for new behavior
 - **Benchmarks** - update if performance characteristics change
 - **Documentation** - update doc comments if exported API changes
 - **Error messages** - ensure they remain accurate and helpful
@@ -148,7 +148,7 @@ slog.Info("fetching user", "user_id", id)
 ## Concurrency
 
 - Pass `context.Context` as the first argument to functions that block or do I/O.
-- Honour cancellation: `select { case <-ctx.Done(): return ctx.Err(); ... }`.
+- Honor cancellation: `select { case <-ctx.Done(): return ctx.Err(); ... }`.
 - Prefer channels and `sync.WaitGroup`/`errgroup.Group` over hand-rolled coordination.
 - Guard shared state with `sync.Mutex` or `sync/atomic`; document ownership.
 - Never start a goroutine without a clear lifecycle.

@@ -23,7 +23,7 @@ import "sort"
 //   - Prometheus: `ratatoskr_validation_findings_total{code,severity,category}`.
 type Finding struct {
 	// Code is the stable identifier for this finding kind, e.g.
-	// "E101_METRIC_UNKNOWN". See [Code] for the full catalogue.
+	// "E101_METRIC_UNKNOWN". See [Code] for the full catalog.
 	Code Code `json:"code"`
 	// Severity classifies how loudly the caller should react.
 	Severity Severity `json:"severity"`

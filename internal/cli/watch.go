@@ -118,7 +118,7 @@ func wrapRun(env Env, cfg runner.Config) watcher.RunFunc {
 //   - errCh: receives the server's terminal error (buffered, len=1)
 //   - err:   non-nil only if the listener could not be opened
 //
-// The server is shut down when ctx is cancelled.
+// The server is shut down when ctx is canceled.
 func maybeStartTelemetryServer(ctx context.Context, env Env, addr string, tel *telemetry.Telemetry) (<-chan struct{}, <-chan error, error) {
 	errCh := make(chan error, 1)
 	if addr == "" {
@@ -140,7 +140,7 @@ func maybeStartTelemetryServer(ctx context.Context, env Env, addr string, tel *t
 		defer close(done)
 		errCh <- srv.Serve(ln)
 	}()
-	go func() { //#nosec G118 -- shutdown intentionally derives from context.Background so the timeout applies after ctx is already cancelled
+	go func() { //#nosec G118 -- shutdown intentionally derives from context.Background so the timeout applies after ctx is already canceled
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
