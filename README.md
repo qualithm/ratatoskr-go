@@ -206,6 +206,6 @@ Named for the Old Norse [Ratatoskr](https://en.wikipedia.org/wiki/Ratatoskr) —
 runs up and down Yggdrasil carrying messages between the eagle at the crown and the serpent at the
 roots. The library walks syntax trees and reports what it finds.
 
-## Licence
+## License
 
 Apache-2.0

@@ -14,7 +14,7 @@ import (
 // PromQLClient retrieves catalog information from a Prometheus-compatible
 // HTTP API (Mimir, Prometheus, Cortex, Thanos).
 //
-// All methods take a context that is honoured for cancellation; callers
+// All methods take a context that is honored for cancellation; callers
 // should wrap with [context.WithTimeout] to bound per-query latency. The
 // matchers argument follows Prometheus `match[]` semantics: each element
 // is a complete selector like `{job="api"}` or `up{job="api"}`. An empty

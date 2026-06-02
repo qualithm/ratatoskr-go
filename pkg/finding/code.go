@@ -62,7 +62,7 @@ const (
 )
 
 // DefaultSeverity returns the default severity implied by the code's prefix.
-// Returns [SeverityInfo] for unrecognised codes so unknown values are visible
+// Returns [SeverityInfo] for unrecognized codes so unknown values are visible
 // but non-blocking.
 func (c Code) DefaultSeverity() Severity {
 	if len(c) == 0 {

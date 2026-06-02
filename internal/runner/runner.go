@@ -3,7 +3,7 @@
 //
 // The runner is the bridge between the CLI and the worker packages:
 //
-//  1. Walk the configured input paths and parse every recognised file
+//  1. Walk the configured input paths and parse every recognized file
 //     into the typed extractions exposed by the top-level
 //     ratatoskr-go extractors.
 //  2. Run [lint.LintAll] across the parsed rule files (offline pass).
@@ -142,7 +142,7 @@ func withDefaults(cfg Config) Config {
 	return cfg
 }
 
-// load walks the input paths and parses every recognised file into its
+// load walks the input paths and parses every recognized file into its
 // typed extraction, accumulating parse-error findings as it goes.
 func load(in Inputs) (
 	promFiles []lint.PromQLFile,

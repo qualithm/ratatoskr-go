@@ -42,7 +42,7 @@ const (
 	LanguageLogQL Language = "logql"
 )
 
-// Valid reports whether l is a recognised language.
+// Valid reports whether l is a recognized language.
 func (l Language) Valid() bool {
 	switch l {
 	case LanguagePromQL, LanguageLogQL:
@@ -87,7 +87,7 @@ type Entry struct {
 	Result *Result `json:"result,omitempty"`
 	// Error, when non-empty, records that the upstream returned an error
 	// for this query. Negative caching is useful for "metric definitely
-	// missing" responses; callers decide whether to honour it.
+	// missing" responses; callers decide whether to honor it.
 	Error string `json:"error,omitempty"`
 }
 
