@@ -6,7 +6,7 @@ BINARY_NAME ?= ratatoskr
 PKG         := ./...
 COVER_FILE  := coverage.out
 GOVULNCHECK_VERSION := v1.3.0
-GOSEC_VERSION := v2.26.1
+GOSEC_VERSION := v2.27.1
 GOSEC_ARGS ?= -exclude-dir=examples ./...
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      ?= $(shell git rev-parse HEAD 2>/dev/null || echo none)
