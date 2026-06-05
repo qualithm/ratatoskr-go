@@ -278,6 +278,7 @@ func TestCatalogRefreshTickTriggersRerun(t *testing.T) {
 		cancel()
 		<-done
 		t.Fatal("ticker never created")
+		return
 	}
 
 	tk.c <- time.Unix(60, 0)
