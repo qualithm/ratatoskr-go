@@ -8,7 +8,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/common v0.67.5
 	github.com/prometheus/prometheus v0.311.3
-	github.com/qualithm/logql-syntax v0.1.1
+	github.com/qualithm/logql-syntax v0.1.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 

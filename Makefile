@@ -87,7 +87,7 @@ clean: ## Remove build artefacts
 
 .PHONY: install-tools
 install-tools: ## Install dev tooling
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
