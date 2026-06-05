@@ -132,10 +132,12 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 {
   "expr": "<original input>",
   "metricRefs": ["sorted", "unique", "metric", "names"],
-  "selectors": [{ "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." }],
+  "selectors": [
+    { "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." },
+  ],
   "atModifiers": [1717000000.0], // optional
   "functions": ["rate", "sum"], // optional
-  "error": "parse: ..." // CLI only, when batch input has bad expressions
+  "error": "parse: ...", // CLI only, when batch input has bad expressions
 }
 ```
 
@@ -171,6 +173,32 @@ make test-coverage
 make lint
 ```
 
+### Updating logql-syntax
+
+When `github.com/qualithm/logql-syntax` publishes a new tag, update the dependency in this module
+with:
+
+```bash
+go get github.com/qualithm/logql-syntax@latest
+# @latest resolves to the newest tag and writes that concrete version to go.mod.
+# Use an explicit tag only when you need a specific version: @v0.1.2
+go mod tidy
+go test ./...
+```
+
+Then review the dependency diff:
+
+```bash
+git diff -- go.mod go.sum
+```
+
+If the tag is very new and your proxy does not see it yet, retry once with:
+
+```bash
+GOPROXY=direct go get github.com/qualithm/logql-syntax@latest
+go mod tidy
+```
+
 ### Security Tooling
 
 ```bash
@@ -186,7 +214,7 @@ Install tools manually (if you are not using `make install-tools`):
 ```bash
 go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
 go install github.com/securego/gosec/v2/cmd/gosec@v2.26.1
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 ```
 
 ### Docker
