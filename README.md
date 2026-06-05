@@ -132,12 +132,10 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 {
   "expr": "<original input>",
   "metricRefs": ["sorted", "unique", "metric", "names"],
-  "selectors": [
-    { "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." },
-  ],
+  "selectors": [{ "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." }],
   "atModifiers": [1717000000.0], // optional
   "functions": ["rate", "sum"], // optional
-  "error": "parse: ...", // CLI only, when batch input has bad expressions
+  "error": "parse: ..." // CLI only, when batch input has bad expressions
 }
 ```
 
