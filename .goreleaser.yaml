@@ -49,8 +49,9 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 changelog:
-  sort: asc
+  sort: desc
   use: github
+  format: "- {{ .Message }}"
   filters:
     exclude:
       - "^docs:"
@@ -59,6 +60,9 @@ changelog:
       - "^ci:"
       - Merge pull request
       - Merge branch
+      - "^Merge .* into main"
+      - "^Merge .* into test"
+      - "^Merge .* into development"
 
 release:
   github:
