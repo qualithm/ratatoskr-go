@@ -229,22 +229,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add helm/lgtm/values.yaml
           git diff --cached --quiet || git commit -m "chore(ci): sync lgtm ratatoskr Helm tag to ${TAG}"
+          # Push to main only. cloud's sync-branches workflow fires on this push
+          # and owns downstream realignment (reset test to main; reset/rebase
+          # development). Realigning here would race that workflow and reintroduce
+          # merge commits on development.
           git push
-
-      - name: Merge into test and development branches
-        shell: bash
-        working-directory: cloud
-        run: |
-          set -euo pipefail
-          for branch in test development; do
-            if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-              echo "Merging main into $branch..."
-              git fetch origin "$branch"
-              git checkout "$branch"
-              git merge origin/main --no-edit -m "chore(ci): merge main into $branch"
-              git push origin "$branch"
-              git checkout main
-            else
-              echo "Branch $branch does not exist, skipping."
-            fi
-          done
