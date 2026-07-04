@@ -19,14 +19,9 @@ Any code change should include review of:
 - **Configuration** - update defaults, env vars, or flags if affected
 - **Dependencies** - `go mod tidy` after removing code
 
-Run before committing:
-
-```bash
-gofmt -s -w .
-go vet ./...
-golangci-lint run
-go test -race ./...
-```
+Run before committing: see
+[.github/instructions/checks.instructions.md](.github/instructions/checks.instructions.md) (synced
+from dx) for the exact commands this repo's CI enforces.
 
 ## Imports
 
