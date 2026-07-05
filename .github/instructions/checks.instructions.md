@@ -6,8 +6,8 @@ description:
 
 # Pre-commit Checks
 
-This repo's `ci.yaml` is generated from `dx/ci-templates/go-lib-gosec.yaml`. Run these before
-committing so CI passes on the first try:
+This repo's `ci.yaml` is generated from `dx/ci-templates/go-lib-gosec.yaml` via `dx ci sync` (check
+for drift with `dx ci drift`). Run these before committing so CI passes on the first try:
 
 ```bash
 gofmt -s -l .   # must print nothing
