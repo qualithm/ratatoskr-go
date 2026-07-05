@@ -9,6 +9,10 @@ Go library and CLI for extracting structural references from LGTM-stack queries.
 LogQL into a stable JSON representation suitable for validation, catalog cross-referencing, and
 dashboard auditing.
 
+Named for the Old Norse [Ratatoskr](https://en.wikipedia.org/wiki/Ratatoskr) — the squirrel that
+runs up and down Yggdrasil carrying messages between the eagle at the crown and the serpent at the
+roots. The library walks syntax trees and reports what it finds.
+
 ## Features
 
 - **AST-accurate extraction** — wraps `github.com/prometheus/prometheus/promql/parser` and
@@ -132,10 +136,12 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 {
   "expr": "<original input>",
   "metricRefs": ["sorted", "unique", "metric", "names"],
-  "selectors": [{ "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." }],
+  "selectors": [
+    { "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." },
+  ],
   "atModifiers": [1717000000.0], // optional
   "functions": ["rate", "sum"], // optional
-  "error": "parse: ..." // CLI only, when batch input has bad expressions
+  "error": "parse: ...", // CLI only, when batch input has bad expressions
 }
 ```
 
@@ -225,12 +231,6 @@ docker build -f docker/Dockerfile -t ratatoskr .
 
 Tagged releases are automatically built and published to GHCR (`ghcr.io/qualithm/ratatoskr-go`) when
 CI passes on `main`.
-
-## Name
-
-Named for the Old Norse [Ratatoskr](https://en.wikipedia.org/wiki/Ratatoskr) — the squirrel that
-runs up and down Yggdrasil carrying messages between the eagle at the crown and the serpent at the
-roots. The library walks syntax trees and reports what it finds.
 
 ## License
 
