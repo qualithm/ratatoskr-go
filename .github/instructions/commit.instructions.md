@@ -16,7 +16,7 @@ type(scope)!: subject
 
 - **type**: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `build` | `ci` |
   `chore` | `revert`
-- **scope**: _(optional)_ area affected, e.g. `parser`, `cmd`
+- **scope**: _(optional)_ area affected, e.g. `parser`, `auth`
 - **!**: _(optional)_ indicates a breaking change
 - **subject**: imperative, lowercase, no trailing period
 
@@ -64,9 +64,9 @@ the commit itself only when merging that commit directly should close the issue.
 **Example**
 
 ```
-fix(cmd)!: prevent crash on missing flag
+fix(auth)!: reject tokens signed with the old key
 
-BREAKING CHANGE: --name flag is now required.
+BREAKING CHANGE: tokens issued before the key rotation are no longer accepted.
 Closes #456
 ```
 
