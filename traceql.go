@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/grafana/tempo/pkg/traceql"
+	"github.com/qualithm/traceql-syntax/traceql"
 )
 
 // TraceQLResult is the structural information extracted from a TraceQL
@@ -116,7 +116,7 @@ func opName(v reflect.Value) string {
 		}
 		t = t.Elem()
 	}
-	if t.PkgPath() != "github.com/grafana/tempo/pkg/traceql" {
+	if t.PkgPath() != "github.com/qualithm/traceql-syntax/traceql" {
 		return ""
 	}
 	switch t.Name() {
