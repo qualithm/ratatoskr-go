@@ -417,6 +417,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ github.repository_owner }}/cloud
+          # Land the tag bump on development (the dev environment tracks this
+          # branch); a human then promotes dev -> test -> prod. See dx#145 and
+          # Decision qualithm/dx#147.
+          ref: development
           token: ${{ steps.app-token.outputs.token }}
           path: cloud
           fetch-depth: 0
@@ -458,9 +462,26 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add helm/lgtm/values.yaml
-          git diff --cached --quiet || git commit -m "chore(ci): sync lgtm Helm tag to ${TAG}"
-          # Push to main only. cloud's sync-branches workflow fires on this push
-          # and owns downstream realignment (reset test to main; reset/rebase
-          # development). Realigning here would race that workflow and reintroduce
-          # merge commits on development.
-          git push
+          if git diff --cached --quiet; then
+            echo "No image-tag change to commit"
+            exit 0
+          fi
+          git commit -m "chore(ci): sync lgtm Helm tag to ${TAG}"
+          # Land the bump on development, NOT main: the dev environment tracks
+          # development, so this deploys to dev first; a human then promotes
+          # development -> test -> main (= dev -> test -> prod) with `dx git merge`
+          # (Decision qualithm/dx#147). Because nothing pushes to a protected
+          # branch out-of-band anymore, cloud's sync-branches never force-resets a
+          # live promotion head, so promotion PRs stop being reachability-merged
+          # with their Closes dropped (dx#145). Retry on the concurrent-release
+          # race: every service now lands its bump on development.
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:development; then
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}); rebasing on origin/development"
+            git fetch origin development
+            git rebase origin/development
+          done
+          echo "failed to push tag bump to development after retries" >&2
+          exit 1
