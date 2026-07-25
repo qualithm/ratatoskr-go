@@ -97,7 +97,9 @@ jobs:
   test:
     name: Test (Go ${{ matrix.go-version }})
     needs: [changes, build]
-    if: needs.changes.outputs.code == 'true'
+    # Skipped on main: the coverage job runs an identical suite on the same
+    # toolchain, differing only by the coverage flags.
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.is-main != 'true'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
