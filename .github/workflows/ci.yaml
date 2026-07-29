@@ -6,6 +6,8 @@ name: CI
 on:
   pull_request:
     branches: [main, test, development]
+  push:
+    branches: [main]
   workflow_dispatch: {}
 
 concurrency:
@@ -41,7 +43,7 @@ jobs:
               - '!LICENSE'
       - id: tier
         run: |
-          if [[ "${{ github.base_ref }}" == "main" ]]; then
+          if [[ "${{ github.base_ref }}" == "main" || "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "is-main=true" >> "$GITHUB_OUTPUT"
           else
             echo "is-main=false" >> "$GITHUB_OUTPUT"
