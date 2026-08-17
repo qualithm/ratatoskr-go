@@ -3,7 +3,6 @@
 [![CI](https://github.com/qualithm/ratatoskr-go/actions/workflows/ci.yaml/badge.svg)](https://github.com/qualithm/ratatoskr-go/actions/workflows/ci.yaml)
 [![codecov](https://codecov.io/gh/qualithm/ratatoskr-go/graph/badge.svg)](https://codecov.io/gh/qualithm/ratatoskr-go)
 [![Go Reference](https://pkg.go.dev/badge/github.com/qualithm/ratatoskr-go.svg)](https://pkg.go.dev/github.com/qualithm/ratatoskr-go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/qualithm/ratatoskr-go)](https://goreportcard.com/report/github.com/qualithm/ratatoskr-go)
 
 Go library and CLI for extracting structural references from LGTM-stack queries. Parses PromQL and
 LogQL into a stable JSON representation suitable for validation, catalog cross-referencing, and
@@ -136,10 +135,12 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 {
   "expr": "<original input>",
   "metricRefs": ["sorted", "unique", "metric", "names"],
-  "selectors": [{ "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." }],
+  "selectors": [
+    { "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." },
+  ],
   "atModifiers": [1717000000.0], // optional
   "functions": ["rate", "sum"], // optional
-  "error": "parse: ..." // CLI only, when batch input has bad expressions
+  "error": "parse: ...", // CLI only, when batch input has bad expressions
 }
 ```
 
