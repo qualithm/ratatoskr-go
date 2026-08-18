@@ -226,11 +226,6 @@ go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 docker build -f docker/Dockerfile -t ratatoskr .
 ```
 
-## Publishing
-
-Tagged releases are automatically built and published to GHCR (`ghcr.io/qualithm/ratatoskr-go`) when
-CI passes on `main`.
-
 ## Minimum Supported Go Version
 
 Go 1.26+.
