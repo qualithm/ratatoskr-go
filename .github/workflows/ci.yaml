@@ -79,6 +79,17 @@ jobs:
           fi
       - run: go vet ./...
       - run: go build ./...
+      # Repos carrying internal/server/coverage.json (operator-mcp) get the
+      # management-API route coverage drift check; inert elsewhere.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: hashFiles('internal/server/coverage.json') != ''
+        with:
+          repository: qualithm/platform
+          ref: development
+          path: platform
+      - name: MCP route coverage drift
+        if: hashFiles('internal/server/coverage.json') != ''
+        run: go run ./cmd/coverage-check -platform platform
 
   lint:
     name: Lint
