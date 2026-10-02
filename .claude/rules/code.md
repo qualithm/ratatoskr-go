@@ -19,8 +19,8 @@ Any code change should include review of:
 - **Configuration** - update defaults, env vars, or flags if affected
 - **Dependencies** - `go mod tidy` after removing code
 
-Run before committing: see `.github/instructions/checks.instructions.md` (synced from dx) for the
-exact commands this repo's CI enforces.
+Run before committing: see `.claude/rules/checks.md` (synced from dx) for the exact commands this
+repo's CI enforces.
 
 ## Imports
 

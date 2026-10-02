@@ -1,6 +1,7 @@
 ---
 description: "Conventions for runnable example programs"
-applyTo: "examples/**"
+paths:
+  - "examples/**"
 ---
 
 # Example Conventions

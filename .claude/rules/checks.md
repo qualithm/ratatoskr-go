@@ -1,5 +1,4 @@
 ---
-applyTo: "**"
 description:
   "Exact pre-commit commands for the go-lib-gosec CI archetype, kept in sync with ci.yaml"
 ---
