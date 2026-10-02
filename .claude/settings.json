@@ -1,0 +1,39 @@
+{
+  "model": "claude-opus-5-5",
+  "effortLevel": "medium",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch)",
+      "Bash(git branch --show-current)",
+      "Bash(gh pr view)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr checks)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr diff)",
+      "Bash(gh pr diff *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)",
+      "Bash(gofmt -s -l *)",
+      "Bash(go mod tidy)",
+      "Bash(go vet *)",
+      "Bash(go build *)",
+      "Bash(go test *)",
+      "Bash(golangci-lint run)",
+      "Bash(golangci-lint run *)"
+    ]
+  }
+}
