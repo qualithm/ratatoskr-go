@@ -497,8 +497,13 @@ jobs:
           chmod +x /usr/local/bin/yq
           yq --version
 
-      - name: Update Helm values image tag with yq
+      - name: Update Helm values image tag and digest with yq
         shell: bash
+        env:
+          # The pushed index digest. The node pulls by digest, so tag and digest
+          # are written together or not at all (Decision qualithm/pm#744,
+          # amendment 2026-10-03).
+          DIGEST: ${{ needs.docker.outputs.image-digest }}
         run: |
           set -euo pipefail
           chart_dir="./cloud/helm/lgtm"
@@ -508,10 +513,14 @@ jobs:
             echo "Helm values not found at $values_file" >&2
             exit 1
           fi
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Image digest missing or malformed: '${DIGEST}'" >&2
+            exit 1
+          fi
 
-          yq eval --inplace '.ratatoskr.image.tag = strenv(TAG)' "$values_file"
+          yq eval --inplace '.ratatoskr.image.tag = strenv(TAG) | .ratatoskr.image.digest = strenv(DIGEST)' "$values_file"
 
-          echo "Updated lgtm image tag in values.yaml to: ${TAG}"
+          echo "Updated lgtm image in values.yaml to: ${TAG}@${DIGEST}"
 
       - name: Commit and push changes
         shell: bash
@@ -522,10 +531,10 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add helm/lgtm/values.yaml
           if git diff --cached --quiet; then
-            echo "No image-tag change to commit"
+            echo "No image change to commit"
             exit 0
           fi
-          git commit -m "chore(ci): sync lgtm Helm tag to ${TAG}"
+          git commit -m "chore(ci): sync lgtm Helm image to ${TAG}@${DIGEST}"
           # Land the bump on development, NOT main: the dev environment tracks
           # development, so this deploys to dev first; a human then promotes
           # development -> test -> main (= dev -> test -> prod) with `dx git merge`
