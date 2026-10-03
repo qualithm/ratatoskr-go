@@ -456,6 +456,12 @@ jobs:
     name: Update Helm
     runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: docker
+    env:
+      # The pushed index digest, job-wide: the update step writes it and the
+      # commit step names it. The node pulls by digest, so tag and digest are
+      # written together or not at all (Decision qualithm/pm#744, amendment
+      # 2026-10-03).
+      DIGEST: ${{ needs.docker.outputs.image-digest }}
     steps:
       - name: Create TAG env (sha-short)
         shell: bash
@@ -499,11 +505,6 @@ jobs:
 
       - name: Update Helm values image tag and digest with yq
         shell: bash
-        env:
-          # The pushed index digest. The node pulls by digest, so tag and digest
-          # are written together or not at all (Decision qualithm/pm#744,
-          # amendment 2026-10-03).
-          DIGEST: ${{ needs.docker.outputs.image-digest }}
         run: |
           set -euo pipefail
           chart_dir="./cloud/helm/lgtm"
