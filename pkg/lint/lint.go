@@ -3,14 +3,6 @@
 // All checks consume the AST-level extractions produced by the top-level
 // extractors in github.com/qualithm/ratatoskr-go and emit findings to the
 // stable [finding.Finding] format.
-//
-// The supported checks are:
-//
-//   - Required `labels.severity` on alerting rules.
-//   - Required annotations (default: `summary`, `description`) on alerting rules.
-//   - `for` >= group `interval` (configurable: off / warning / error).
-//   - Duplicate alert names across the entire input corpus.
-//   - Empty rule expressions.
 package lint
 
 import (
