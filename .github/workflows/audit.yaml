@@ -31,7 +31,7 @@ jobs:
           # would then hit it, restore too little, and skip saving the fuller cache.
           cache: false
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
       - name: Run govulncheck
         id: scan
         continue-on-error: true
