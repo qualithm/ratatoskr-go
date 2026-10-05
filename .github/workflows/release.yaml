@@ -463,6 +463,21 @@ jobs:
       # 2026-10-03).
       DIGEST: ${{ needs.docker.outputs.image-digest }}
     steps:
+      # The image is named after github.repository but the chart path is fixed,
+      # so a copy of this workflow in another repo (a seeded sandbox or mirror)
+      # would write its own commit's tag into this chart. Fail before touching
+      # cloud (qualithm/pm#428).
+      - name: Require the chart's owning repo
+        shell: bash
+        env:
+          OWNING_REPO: qualithm/ratatoskr-go
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REPOSITORY" != "$OWNING_REPO" ]]; then
+            echo "::error::update-helm writes cloud/helm/lgtm, which belongs to ${OWNING_REPO}; refusing to run from ${GITHUB_REPOSITORY}. Disable Actions on this repo or remove its release.yaml."
+            exit 1
+          fi
+
       - name: Create TAG env (sha-short)
         shell: bash
         run: |
