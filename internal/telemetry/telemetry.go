@@ -1,6 +1,5 @@
 // Package telemetry hosts the Prometheus metrics and probe endpoints
-// exposed by long-running Ratatoskr invocations (the `--watch` mode
-// that lands in Phase 5).
+// exposed by long-running Ratatoskr invocations (the `--watch` mode).
 //
 // The package keeps a private *prometheus.Registry so multiple tests
 // (and main()) can construct an independent telemetry stack without
