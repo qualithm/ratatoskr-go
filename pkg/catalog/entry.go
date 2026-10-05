@@ -1,16 +1,7 @@
 // Package catalog answers the question "does this label / metric / stream
 // exist in the live Mimir or Loki instance?" for Ratatoskr's validators.
 //
-// The package is organised in three layers:
-//
-//   - [Entry] and [Store] — the on-disk JSON cache format and the storage
-//     interface (filesystem or in-memory).
-//   - [Allowlist] and the suggester — pure-Go helpers for tolerating known
-//     gaps and proposing fixes when a finding fires.
-//   - The HTTP clients and checker (added in later commits) — fetch missing
-//     entries and emit [finding.Finding] values.
-//
-// Cache layout on disk (locked in the migration design doc):
+// Cache layout on disk:
 //
 //	<root>/v1/promql/<sha256(query)>.json
 //	<root>/v1/logql/<sha256(query)>.json

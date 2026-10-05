@@ -9,10 +9,12 @@
 //	ratatoskr logql    rule-file <path>
 //	ratatoskr traceql  expr <expression>
 //	ratatoskr dashboard <path>
+//	ratatoskr lint|check|validate [flags]
 //
-// Output is line-delimited JSON, one object per parsed expression, rule
-// file, or dashboard. All subcommands accept "-" in place of a positional
-// argument to read from stdin.
+// The extraction subcommands emit line-delimited JSON, one object per parsed
+// expression, rule file, or dashboard, and accept "-" in place of a
+// positional argument to read from stdin. lint, check and validate report
+// findings; run them with -h for their flags.
 package main
 
 import (

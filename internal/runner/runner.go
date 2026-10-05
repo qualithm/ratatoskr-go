@@ -1,18 +1,6 @@
 // Package runner orchestrates the offline + online passes of a Ratatoskr
 // validation run.
 //
-// The runner is the bridge between the CLI and the worker packages:
-//
-//  1. Walk the configured input paths and parse every recognized file
-//     into the typed extractions exposed by the top-level
-//     ratatoskr-go extractors.
-//  2. Run [lint.LintAll] across the parsed rule files (offline pass).
-//  3. Optionally prewarm and run a [catalog.Checker] against every
-//     PromQL / LogQL expression extracted from rule files and dashboards
-//     (online pass).
-//  4. Return a single [Result] with the merged, sorted findings and the
-//     number of files scanned.
-//
 // The runner emits parse errors (E001 / E002 / E003 / E004) as findings
 // rather than aborting, so a single broken file in a directory never hides
 // problems in its siblings.

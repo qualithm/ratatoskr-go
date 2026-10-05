@@ -7,16 +7,6 @@
 // [RunFunc]. This keeps the package free of imports from internal/cli /
 // internal/runner and trivially mockable in tests.
 //
-//	w, err := watcher.New(watcher.Config{
-//	    Inputs:         runner.Inputs{PromRulesPaths: paths},
-//	    Run:            func(ctx context.Context, in runner.Inputs) (*runner.Result, error) { ... },
-//	    OnResult:       func(r *runner.Result, err error) { ... },
-//	    Debounce:       500 * time.Millisecond,
-//	    CatalogRefresh: 10 * time.Minute,
-//	})
-//	if err != nil { ... }
-//	w.Run(ctx) // blocks until ctx is canceled
-//
 // The watcher always performs an initial run before entering the event
 // loop, so callers see a stable result by the time SetReady(true) fires
 // on the telemetry handler.

@@ -4,20 +4,16 @@
 [![codecov](https://codecov.io/gh/qualithm/ratatoskr-go/graph/badge.svg)](https://codecov.io/gh/qualithm/ratatoskr-go)
 [![Go Reference](https://pkg.go.dev/badge/github.com/qualithm/ratatoskr-go.svg)](https://pkg.go.dev/github.com/qualithm/ratatoskr-go)
 
-Go library and CLI for extracting structural references from LGTM-stack queries. Parses PromQL and
-LogQL into a stable JSON representation suitable for validation, catalog cross-referencing, and
-dashboard auditing.
-
-Named for the Old Norse [Ratatoskr](https://en.wikipedia.org/wiki/Ratatoskr) — the squirrel that
-runs up and down Yggdrasil carrying messages between the eagle at the crown and the serpent at the
-roots. The library walks syntax trees and reports what it finds.
+Go library and CLI for extracting structural references from LGTM-stack queries. Parses PromQL,
+LogQL and TraceQL into a stable JSON representation suitable for validation, catalog
+cross-referencing, and dashboard auditing.
 
 ## Features
 
-- **AST-accurate extraction** — wraps `github.com/prometheus/prometheus/promql/parser` and
-  `github.com/qualithm/logql-syntax` rather than regex-scraping. Catches references inside
-  `label_replace`, subqueries, binary operators, recording-rule outputs, `@` modifiers, and LogQL
-  pipelines (line filters, label filters, parsers).
+- **AST-accurate extraction** — wraps `github.com/prometheus/prometheus/promql/parser`,
+  `github.com/qualithm/logql-syntax` and `github.com/qualithm/traceql-syntax` rather than
+  regex-scraping. Catches references inside `label_replace`, subqueries, binary operators,
+  recording-rule outputs, `@` modifiers, and LogQL pipelines (line filters, label filters, parsers).
 - **Stable JSON output** — sorted, de-duplicated, suitable for diffs.
 - **Library + CLI** — embed `github.com/qualithm/ratatoskr-go` or shell out to the `ratatoskr`
   binary / container.
@@ -120,14 +116,15 @@ ratatoskr traceql expr '{ resource.service.name = "api" && span.http.status_code
 }
 ```
 
-Rule files (Prometheus recording / alerting) and Grafana dashboards:
+Rule files (Prometheus and Loki recording / alerting) and Grafana dashboards:
 
 ```bash
 ratatoskr promql rule-file rules.yaml
+ratatoskr logql rule-file rules.yaml
 ratatoskr dashboard dashboard.json
 ```
 
-Both emit one JSON object per input file with per-rule / per-panel extractions embedded.
+Each emits one JSON object per input file with per-rule / per-panel extractions embedded.
 
 ## JSON Schema
 
@@ -135,12 +132,10 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 {
   "expr": "<original input>",
   "metricRefs": ["sorted", "unique", "metric", "names"],
-  "selectors": [
-    { "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." },
-  ],
+  "selectors": [{ "metric": "...", "label": "...", "op": "=|!=|=~|!~", "value": "..." }],
   "atModifiers": [1717000000.0], // optional
   "functions": ["rate", "sum"], // optional
-  "error": "parse: ...", // CLI only, when batch input has bad expressions
+  "error": "parse: ..." // CLI only, when batch input has bad expressions
 }
 ```
 
@@ -156,16 +151,13 @@ Both emit one JSON object per input file with per-rule / per-panel extractions e
 make install-tools
 ```
 
-This installs local development tooling, including `golangci-lint`, `goimports`, and `govulncheck`.
+This installs `golangci-lint`, `goimports`, `govulncheck` and `gosec` into `$GOPATH/bin` (`~/go/bin`
+by default). Put that directory on your `PATH`:
 
-> **Note:** Tools are installed to `$GOPATH/bin` (typically `~/go/bin`). Make sure that directory is
-> on your `$PATH`, otherwise the installed binaries won't be found. Add this to your shell config if
-> needed:
->
-> ```bash
-> echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
-> source ~/.zshrc
-> ```
+```bash
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
 
 ### Building & Testing
 
@@ -210,15 +202,7 @@ make gosec   # standalone gosec scan
 make lint    # golangci-lint (includes gosec checks via .golangci.yaml)
 ```
 
-Daily CI security audit runs both tools in `.github/workflows/audit.yaml`.
-
-Install tools manually (if you are not using `make install-tools`):
-
-```bash
-go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
-go install github.com/securego/gosec/v2/cmd/gosec@v2.26.1
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-```
+`.github/workflows/audit.yaml` runs `govulncheck` and `gosec` daily.
 
 ### Docker
 
