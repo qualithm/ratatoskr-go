@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "run": "test -z \"$(gofmt -s -l . | tee /dev/stderr)\"",
+      "timeout": "10m",
+      "dir": "."
+    },
+    {
+      "run": "go mod tidy -diff",
+      "timeout": "10m",
+      "dir": "."
+    },
+    {
+      "run": "go vet ./...",
+      "timeout": "10m",
+      "dir": "."
+    },
+    {
+      "run": "go build ./...",
+      "timeout": "10m",
+      "dir": "."
+    },
+    {
+      "run": "golangci-lint run",
+      "timeout": "10m",
+      "dir": "."
+    },
+    {
+      "run": "go test -race -count=1 -shuffle=on ./...",
+      "timeout": "10m",
+      "dir": "."
+    }
+  ]
+}
