@@ -38,9 +38,10 @@ Table-driven with `t.Run`, `t.Parallel()` when independent, `t.TempDir()` for fi
 
 ## When code changes
 
-A behavior change carries a test change; update doc comments, defaults and flags it affects. Run
-`go mod tidy` after any dependency change and commit `go.sum`. Prefer the standard library and
-justify each new direct dependency; no `replace` directives in main modules.
+A behavior change carries tests that cover its new lines (`dx coverage patch` checks them after the
+coverage step); update doc comments, defaults and flags it affects. Run `go mod tidy` after any
+dependency change and commit `go.sum`. Prefer the standard library and justify each new direct
+dependency; no `replace` directives in main modules.
 
 ## Environment variables
 
