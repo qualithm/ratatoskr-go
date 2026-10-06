@@ -235,7 +235,7 @@ jobs:
           # PREV_TAG is the most recent tag reachable before this one, if any.
           PREV_TAG=$(git tag --sort=-creatordate --merged "$TAG" | grep -Fxv "$TAG" | head -1 || true)
 
-          # Injected from dx scripts/changelog-notes by release-sync — do not
+          # Injected from dx ci-templates/_changelog-notes.py by release-sync — do not
           # hand-edit; change the source script and re-run release-sync.
           # GoReleaser's own `changelog.use: github` has the same blind spot as
           # `gh release create --generate-notes`: it only ever sees the single
@@ -498,8 +498,8 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/cloud
           # Land the tag bump on development (the dev environment tracks this
-          # branch); a human then promotes dev -> test -> prod. See dx#145 and
-          # Decision qualithm/dx#147.
+          # branch); a human then promotes dev -> test -> prod. See qualithm/pm#470 and
+          # Decision qualithm/pm#730.
           ref: development
           token: ${{ steps.app-token.outputs.token }}
           path: cloud
@@ -554,10 +554,10 @@ jobs:
           # Land the bump on development, NOT main: the dev environment tracks
           # development, so this deploys to dev first; a human then promotes
           # development -> test -> main (= dev -> test -> prod) with `dx git merge`
-          # (Decision qualithm/dx#147). Because nothing pushes to a protected
+          # (Decision qualithm/pm#730). Because nothing pushes to a protected
           # branch out-of-band anymore, cloud's sync-branches never force-resets a
           # live promotion head, so promotion PRs stop being reachability-merged
-          # with their Closes dropped (dx#145). Retry on the concurrent-release
+          # with their Closes dropped (qualithm/pm#470). Retry on the concurrent-release
           # race: every service now lands its bump on development.
           for attempt in 1 2 3 4 5; do
             if git push origin HEAD:development; then
