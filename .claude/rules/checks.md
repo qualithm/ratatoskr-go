@@ -14,8 +14,11 @@ go mod tidy -diff                              # fails on go.mod/go.sum drift; r
 go vet ./...
 go build ./...
 golangci-lint run
-go test -race -count=1 -shuffle=on ./...
+python3 .claude/checks/ci-jobs.py --skip-ci-only coverage
 ```
+
+The `ci-jobs.py --skip-ci-only coverage` step runs CI's Coverage job locally: the same tests and the
+same 80% line-coverage gate, minus the Codecov upload, so coverage is fixed in the same PR.
 
 `go mod tidy` drift is the single most common CI failure here — always run it after adding or
 removing a dependency, even if `go build` succeeds without it.
