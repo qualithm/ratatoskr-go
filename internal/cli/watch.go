@@ -21,7 +21,7 @@ import (
 // watcher, and blocks until the process receives SIGINT / SIGTERM.
 //
 // Exit policy in watch mode is intentionally simple: 0 on clean
-// shutdown, 1 on watcher failure (the per-pass findings are reported
+// shutdown, 2 on watcher failure (the per-pass findings are reported
 // out-of-band via stdout / telemetry and do not influence the exit
 // code).
 func runWatch(parent context.Context, env Env, cfg runner.Config, in runner.Inputs, f *flags, format report.Format) int {
