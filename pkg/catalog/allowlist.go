@@ -11,7 +11,7 @@ import (
 
 // Allowlist suppresses catalog findings for known-missing metrics, labels,
 // and label values. It is loaded from a YAML document at the path passed
-// via `--allowlist FILE` or under `catalog.allowlist:` in the config.
+// via `--allowlist FILE`.
 //
 // Patterns support a trailing `*` for prefix matching:
 //
