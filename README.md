@@ -260,6 +260,9 @@ ratatoskr validate --watch \
   file has moved. The default is off.
 - `--listen` serves `/metrics`, `/healthz` and `/readyz` on the address.
 
+A run that fails outright, for example because the catalog backend is unreachable, is retried with
+backoff until one succeeds. `/readyz` turns ready after the first successful run.
+
 Findings do not change the exit code in watch mode. The process exits 0 on SIGINT or SIGTERM, and 2
 when the watcher or the listener fails.
 
