@@ -9,7 +9,9 @@
 //
 // The watcher always performs an initial run before entering the event
 // loop, so callers see a stable result by the time SetReady(true) fires
-// on the telemetry handler.
+// on the telemetry handler. A pass that fails is retried with backoff
+// until one succeeds, so a backend that is briefly down at startup does
+// not leave the watcher unready until the next event or refresh tick.
 package watcher
 
 import (
@@ -30,7 +32,8 @@ import (
 )
 
 // RunFunc executes a single validation pass. The watcher invokes it once
-// per debounced filesystem event and once per catalog-refresh tick.
+// per debounced filesystem event, once per catalog-refresh tick, and again
+// after a pass that returned an error.
 type RunFunc func(ctx context.Context, in runner.Inputs) (*runner.Result, error)
 
 // ResultFunc receives the outcome of every pass, including the very
@@ -66,6 +69,14 @@ type Config struct {
 	// ticker even with no filesystem activity. Useful for picking up new
 	// metrics / labels added to Mimir / Loki out-of-band.
 	CatalogRefresh time.Duration
+
+	// RetryInitial is the wait before re-running a pass whose RunFunc
+	// returned an error. It doubles after each further failure, up to
+	// RetryMax, and resets on success. Default 1s when zero.
+	RetryInitial time.Duration
+
+	// RetryMax caps the retry wait. Default 1m when zero.
+	RetryMax time.Duration
 
 	// Clock is the time source, swappable for tests. Defaults to
 	// time.Now / time.NewTicker.
@@ -106,6 +117,10 @@ type Watcher struct {
 
 	// readyOnce gates the OnReady callback so it fires exactly once.
 	readyOnce sync.Once
+
+	// retryWait is the wait before the next retry; zero when the last
+	// pass succeeded. Owned by the Run goroutine.
+	retryWait time.Duration
 }
 
 // New constructs a Watcher. The returned watcher does not start any
@@ -120,6 +135,15 @@ func New(cfg Config) (*Watcher, error) {
 	if cfg.Debounce == 0 {
 		cfg.Debounce = 500 * time.Millisecond
 	}
+	if cfg.RetryInitial == 0 {
+		cfg.RetryInitial = time.Second
+	}
+	if cfg.RetryMax == 0 {
+		cfg.RetryMax = time.Minute
+	}
+	if cfg.RetryMax < cfg.RetryInitial {
+		cfg.RetryMax = cfg.RetryInitial
+	}
 	if cfg.Clock == nil {
 		cfg.Clock = realClock{}
 	}
@@ -132,8 +156,8 @@ func New(cfg Config) (*Watcher, error) {
 }
 
 // Run executes the initial pass, then blocks until ctx is canceled,
-// re-running on debounced fsnotify events and on the catalog-refresh
-// ticker. The returned error is nil on clean shutdown; non-nil errors
+// re-running on debounced fsnotify events, on the catalog-refresh
+// ticker, and after a failed pass. The returned error is nil on clean shutdown; non-nil errors
 // always wrap the underlying fsnotify or context failure (per-pass
 // failures from RunFunc are reported via OnResult and do not stop the
 // watcher).
@@ -150,15 +174,29 @@ func (w *Watcher) Run(ctx context.Context) error {
 		}
 	}
 
-	// Initial eager pass before entering the loop so /readyz can flip.
-	w.runOnce(ctx)
-
 	var (
 		debounceTimer *time.Timer
 		debounceC     <-chan time.Time
+		retryTimer    *time.Timer
+		retryC        <-chan time.Time
 		refreshC      <-chan time.Time
 		refreshTicker Ticker
 	)
+	// pass runs once and re-arms the retry timer: set after a failure,
+	// cleared after a success, whichever trigger started the pass.
+	pass := func() {
+		if retryTimer != nil {
+			retryTimer.Stop()
+			retryTimer, retryC = nil, nil
+		}
+		if wait := w.runOnce(ctx); wait > 0 {
+			retryTimer = time.NewTimer(wait)
+			retryC = retryTimer.C
+		}
+	}
+
+	// Initial eager pass before entering the loop so /readyz can flip.
+	pass()
 	if w.cfg.CatalogRefresh > 0 {
 		refreshTicker = w.clock.NewTicker(w.cfg.CatalogRefresh)
 		refreshC = refreshTicker.C()
@@ -170,6 +208,9 @@ func (w *Watcher) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			if debounceTimer != nil {
 				debounceTimer.Stop()
+			}
+			if retryTimer != nil {
+				retryTimer.Stop()
 			}
 			return nil
 
@@ -204,20 +245,38 @@ func (w *Watcher) Run(ctx context.Context) error {
 		case <-debounceC:
 			debounceTimer = nil
 			debounceC = nil
-			w.runOnce(ctx)
+			pass()
 
 		case <-refreshC:
-			w.runOnce(ctx)
+			pass()
+
+		case <-retryC:
+			pass()
 		}
 	}
 }
 
-func (w *Watcher) runOnce(ctx context.Context) {
+// runOnce runs one pass and returns how long to wait before retrying it:
+// zero after a success, the next backoff step after a failure.
+func (w *Watcher) runOnce(ctx context.Context) time.Duration {
 	res, err := w.cfg.Run(ctx, w.cfg.Inputs)
 	w.cfg.OnResult(res, err)
-	if err == nil && w.cfg.OnReady != nil {
+	if err != nil {
+		switch {
+		case w.retryWait == 0:
+			w.retryWait = w.cfg.RetryInitial
+		case w.retryWait >= w.cfg.RetryMax/2:
+			w.retryWait = w.cfg.RetryMax
+		default:
+			w.retryWait *= 2
+		}
+		return w.retryWait
+	}
+	w.retryWait = 0
+	if w.cfg.OnReady != nil {
 		w.readyOnce.Do(func() { w.cfg.OnReady(true) })
 	}
+	return 0
 }
 
 // relevantEvent filters fsnotify events down to the ones that should

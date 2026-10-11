@@ -2,6 +2,7 @@ package watcher_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -332,5 +333,145 @@ func TestRealClockNowAndTicker(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatalf("run: %v", err)
+	}
+}
+
+func TestFailedPassIsRetriedUntilSuccess(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeFile(t, dir, "a.yaml", "groups: []")
+
+	const failures = 3
+	var (
+		mu    sync.Mutex
+		times []time.Time
+	)
+	ready := make(chan struct{})
+
+	// No CatalogRefresh and no file writes: only a retry can re-run the pass.
+	w, err := watcher.New(watcher.Config{
+		Inputs: runner.Inputs{PromRulesPaths: []string{dir}},
+		Run: func(context.Context, runner.Inputs) (*runner.Result, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			times = append(times, time.Now())
+			if len(times) <= failures {
+				return nil, errors.New("backend unavailable")
+			}
+			return &runner.Result{}, nil
+		},
+		OnResult:     func(*runner.Result, error) {},
+		OnReady:      func(bool) { close(ready) },
+		RetryInitial: 20 * time.Millisecond,
+		RetryMax:     60 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("ready never fired after the backend recovered")
+	}
+
+	// A successful pass clears the retry, so nothing runs again.
+	time.Sleep(150 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(times) != failures+1 {
+		t.Fatalf("expected %d runs, got %d", failures+1, len(times))
+	}
+	// Waits double from 20ms to 40ms, then cap at 60ms.
+	for i, want := range []time.Duration{20, 40, 60} {
+		if got := times[i+1].Sub(times[i]); got < want*time.Millisecond {
+			t.Fatalf("retry %d came after %v, want at least %v", i+1, got, want*time.Millisecond)
+		}
+	}
+}
+
+func TestRetryMaxBelowInitialIsRaised(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeFile(t, dir, "a.yaml", "groups: []")
+
+	var runs atomic.Int32
+	ready := make(chan struct{})
+	w, err := watcher.New(watcher.Config{
+		Inputs: runner.Inputs{PromRulesPaths: []string{dir}},
+		Run: func(context.Context, runner.Inputs) (*runner.Result, error) {
+			if runs.Add(1) == 1 {
+				return nil, errors.New("backend unavailable")
+			}
+			return &runner.Result{}, nil
+		},
+		OnResult:     func(*runner.Result, error) {},
+		OnReady:      func(bool) { close(ready) },
+		RetryInitial: 20 * time.Millisecond,
+		RetryMax:     time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("ready never fired")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+func TestShutdownWhileRetryPending(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeFile(t, dir, "a.yaml", "groups: []")
+
+	resultC := make(chan struct{}, 4)
+	w, err := watcher.New(watcher.Config{
+		Inputs: runner.Inputs{PromRulesPaths: []string{dir}},
+		Run: func(context.Context, runner.Inputs) (*runner.Result, error) {
+			return nil, errors.New("backend unavailable")
+		},
+		OnResult:     func(*runner.Result, error) { resultC <- struct{}{} },
+		RetryInitial: time.Hour,
+		RetryMax:     time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	waitForResult(t, resultC, 2*time.Second)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("run did not return with a retry pending")
 	}
 }
