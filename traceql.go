@@ -27,6 +27,18 @@ type TraceQLResult struct {
 	// Functions is the set of TraceQL aggregation / metrics function names
 	// invoked (e.g. "count", "avg", "rate", "count_over_time").
 	Functions []string `json:"functions,omitempty"`
+	// Matchers lists every equality comparison between an attribute and a
+	// string literal (e.g. `resource.service.name = "api"`).
+	Matchers []TraceQLMatcher `json:"matchers,omitempty"`
+}
+
+// TraceQLMatcher is an equality comparison between an attribute and a
+// string literal.
+type TraceQLMatcher struct {
+	// Attribute is the compared attribute.
+	Attribute TraceQLAttribute `json:"attribute"`
+	// Value is the string literal it is compared with.
+	Value string `json:"value"`
 }
 
 // TraceQLAttribute is a single attribute reference.
@@ -38,6 +50,14 @@ type TraceQLAttribute struct {
 	Parent bool `json:"parent,omitempty"`
 	// Name is the dotted attribute name (e.g. "http.status_code").
 	Name string `json:"name"`
+}
+
+// Qualified returns the attribute as TraceQL writes it: "span.http.method",
+// "resource.service.name", or ".http.method" when unscoped. The parent
+// prefix is left out, because a parent span's attributes are looked up the
+// same way as any other span's.
+func (a TraceQLAttribute) Qualified() string {
+	return a.Scope + "." + a.Name
 }
 
 // ExtractTraceQL parses expr and returns its structural references.
@@ -54,8 +74,15 @@ func ExtractTraceQL(expr string) (TraceQLResult, error) {
 	attrs := map[TraceQLAttribute]struct{}{}
 	intrinsics := map[string]struct{}{}
 	funcs := map[string]struct{}{}
+	matchers := map[TraceQLMatcher]struct{}{}
 
 	visit := func(v reflect.Value) {
+		if v.Type() == reflect.TypeOf(traceql.BinaryOperation{}) && v.CanInterface() {
+			for _, m := range matchersFrom(v.Interface().(traceql.BinaryOperation)) {
+				matchers[m] = struct{}{}
+			}
+			return
+		}
 		if v.Type() == reflect.TypeOf(traceql.Attribute{}) {
 			a := v.Interface().(traceql.Attribute)
 			if a.Intrinsic != 0 {
@@ -65,11 +92,7 @@ func ExtractTraceQL(expr string) (TraceQLResult, error) {
 			if a.Name == "" {
 				return
 			}
-			scope := strings.ToLower(a.Scope.String())
-			if scope == "none" {
-				scope = ""
-			}
-			attrs[TraceQLAttribute{Scope: scope, Parent: a.Parent, Name: a.Name}] = struct{}{}
+			attrs[attributeFrom(a)] = struct{}{}
 			return
 		}
 		// Collect function names from aggregate / metrics-aggregate elements.
@@ -99,7 +122,83 @@ func ExtractTraceQL(expr string) (TraceQLResult, error) {
 	if len(funcs) > 0 {
 		r.Functions = sortedKeys(funcs)
 	}
+	for m := range matchers {
+		r.Matchers = append(r.Matchers, m)
+	}
+	sort.Slice(r.Matchers, func(i, j int) bool {
+		a, b := r.Matchers[i], r.Matchers[j]
+		if a.Attribute.Qualified() != b.Attribute.Qualified() {
+			return a.Attribute.Qualified() < b.Attribute.Qualified()
+		}
+		if a.Value != b.Value {
+			return a.Value < b.Value
+		}
+		return !a.Attribute.Parent && b.Attribute.Parent
+	})
 	return r, nil
+}
+
+func attributeFrom(a traceql.Attribute) TraceQLAttribute {
+	scope := strings.ToLower(a.Scope.String())
+	if scope == "none" {
+		scope = ""
+	}
+	return TraceQLAttribute{Scope: scope, Parent: a.Parent, Name: a.Name}
+}
+
+// matchersFrom returns the attribute and string literals of an equality
+// comparison, whichever side each is written on. The parser folds
+// `a = "x" || a = "y"` into one IN comparison, which yields a matcher per
+// literal. Intrinsics and non-string literals yield none.
+func matchersFrom(b traceql.BinaryOperation) []TraceQLMatcher {
+	if b.Op != traceql.OpEqual && b.Op != traceql.OpIn {
+		return nil
+	}
+	attr, okAttr := fieldAttribute(b.LHS)
+	lits, okLit := fieldStrings(b.RHS)
+	if !okAttr || !okLit {
+		attr, okAttr = fieldAttribute(b.RHS)
+		lits, okLit = fieldStrings(b.LHS)
+	}
+	if !okAttr || !okLit || attr.Intrinsic != 0 || attr.Name == "" {
+		return nil
+	}
+	out := make([]TraceQLMatcher, 0, len(lits))
+	for _, lit := range lits {
+		out = append(out, TraceQLMatcher{Attribute: attributeFrom(attr), Value: lit})
+	}
+	return out
+}
+
+func fieldAttribute(f traceql.FieldExpression) (traceql.Attribute, bool) {
+	switch a := f.(type) {
+	case traceql.Attribute:
+		return a, true
+	case *traceql.Attribute:
+		if a != nil {
+			return *a, true
+		}
+	}
+	return traceql.Attribute{}, false
+}
+
+func fieldStrings(f traceql.FieldExpression) ([]string, bool) {
+	var s traceql.Static
+	switch v := f.(type) {
+	case traceql.Static:
+		s = v
+	case *traceql.Static:
+		if v == nil {
+			return nil, false
+		}
+		s = *v
+	default:
+		return nil, false
+	}
+	if s.Type == traceql.TypeString {
+		return []string{s.EncodeToString(false)}, true
+	}
+	return s.StringArray()
 }
 
 // opName returns the leading identifier from String() for AST node types

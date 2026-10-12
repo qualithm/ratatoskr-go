@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,12 +30,15 @@ const (
 	virtualMetricLabelsFmt   = "__ratatoskr_metric_labels__:%s"
 	virtualMetricValuesFmt   = "__ratatoskr_metric_label_values__:%s:%s"
 	virtualLokiLabelValueFmt = "__ratatoskr_loki_label_values__:%s"
+	virtualTraceAttrNamesFmt = "__ratatoskr_trace_attribute_names__:%s"
+	virtualTraceAttrValueFmt = "__ratatoskr_trace_attribute_values__:%s:%s"
 )
 
-// Checker runs catalog membership checks against PromQL and LogQL
+// Checker runs catalog membership checks against PromQL, LogQL and TraceQL
 // extractions and returns [finding.Finding] values.
 //
-// At least one of [Checker.Prom] or [Checker.Loki] must be configured;
+// At least one of [Checker.Prom], [Checker.Loki] or [Checker.Tempo] must be
+// configured;
 // missing clients cause the corresponding Check* method to return nil
 // findings with no error so callers can hand it a mixed corpus without
 // branching.
@@ -54,6 +58,12 @@ type Checker struct {
 	// LokiSource is the URL recorded in cache [Entry.Source] for LogQL
 	// queries. Required when Loki is set.
 	LokiSource string
+
+	// Tempo is the TraceQL client. Nil disables TraceQL checks.
+	Tempo TraceQLClient
+	// TempoSource is the URL recorded in cache [Entry.Source] for TraceQL
+	// queries. Required when Tempo is set.
+	TempoSource string
 
 	// Store backs the on-disk or in-memory cache. Nil defaults to a
 	// fresh [MemoryStore] on first use.
@@ -266,6 +276,137 @@ func (c *Checker) CheckLogQL(ctx context.Context, res ratatoskr.LogQLResult, src
 
 	finding.Sort(out)
 	return out, nil
+}
+
+// unscopedTraceScopes are the scopes an unscoped attribute (`.name`) may
+// resolve in.
+var unscopedTraceScopes = []string{"resource", "span"}
+
+func traceScopes(scope string) []string {
+	if scope == "" {
+		return unscopedTraceScopes
+	}
+	return []string{scope}
+}
+
+// CheckTraceQL returns catalog findings for a single TraceQL extraction:
+// one per attribute Tempo does not hold in its scope, and one per string
+// literal Tempo has not seen for a known attribute. An unscoped attribute
+// is looked up in both the resource and span scopes. Literals that stand
+// in for a dashboard variable are skipped.
+func (c *Checker) CheckTraceQL(ctx context.Context, res ratatoskr.TraceQLResult, src finding.Source) ([]finding.Finding, error) {
+	if c.Tempo == nil {
+		return nil, nil
+	}
+	if c.TempoSource == "" {
+		return nil, errors.New("catalog: Checker.TempoSource must be set when Tempo is configured")
+	}
+
+	out := []finding.Finding{}
+	unknown := map[string]struct{}{}
+	seen := map[string]struct{}{}
+
+	for _, a := range res.Attributes {
+		q := a.Qualified()
+		if _, ok := seen[q]; ok {
+			continue
+		}
+		seen[q] = struct{}{}
+		names, err := c.traceAttributeNames(ctx, a.Scope)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := stringSet(names)[a.Name]; ok {
+			continue
+		}
+		unknown[q] = struct{}{}
+		if allowed, _ := c.Allow.AllowsLabel("", q); allowed {
+			continue
+		}
+		out = append(out, c.newFinding(
+			finding.CodeTraceAttributeUnknown,
+			src,
+			fmt.Sprintf("attribute %q not present in Tempo", q),
+			Suggest(a.Name, names, c.maxSuggestions(), c.suggestDist()),
+			finding.Context{Label: q, Expr: res.Expr},
+		))
+	}
+
+	for _, m := range res.Matchers {
+		q := m.Attribute.Qualified()
+		if _, ok := unknown[q]; ok {
+			continue
+		}
+		if m.Value == "" || strings.Contains(m.Value, ratatoskr.DashboardVariableSentinel) {
+			continue
+		}
+		values, err := c.traceAttributeValues(ctx, m.Attribute.Scope, m.Attribute.Name)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := stringSet(values)[m.Value]; ok {
+			continue
+		}
+		if allowed, _ := c.Allow.AllowsLabelValue("", q, m.Value); allowed {
+			continue
+		}
+		out = append(out, c.newFinding(
+			finding.CodeTraceAttributeValueUnknown,
+			src,
+			fmt.Sprintf("value %q not observed for attribute %q", m.Value, q),
+			Suggest(m.Value, values, c.maxSuggestions(), c.suggestDist()),
+			finding.Context{Label: q, Value: m.Value, Expr: res.Expr},
+		))
+	}
+
+	finding.Sort(out)
+	return out, nil
+}
+
+// traceAttributeNames returns the attribute names Tempo holds for scope,
+// merged across both candidate scopes when scope is empty.
+func (c *Checker) traceAttributeNames(ctx context.Context, scope string) ([]string, error) {
+	merged := []string{}
+	for _, s := range traceScopes(scope) {
+		s := s
+		names, err := c.cachedList(ctx, LanguageTraceQL, c.TempoSource, fmt.Sprintf(virtualTraceAttrNamesFmt, s),
+			func(ctx context.Context) ([]string, error) { return c.Tempo.AttributeNames(ctx, s) },
+			func(r *Result, names []string) { r.LabelNames = names },
+			func(r *Result) []string { return r.LabelNames })
+		if err != nil {
+			return nil, err
+		}
+		merged = append(merged, names...)
+	}
+	return sortedUnique(merged), nil
+}
+
+// traceAttributeValues returns the string values Tempo holds for the
+// attribute, merged across both candidate scopes when scope is empty.
+func (c *Checker) traceAttributeValues(ctx context.Context, scope, name string) ([]string, error) {
+	merged := []string{}
+	for _, s := range traceScopes(scope) {
+		s := s
+		values, err := c.cachedList(ctx, LanguageTraceQL, c.TempoSource, fmt.Sprintf(virtualTraceAttrValueFmt, s, name),
+			func(ctx context.Context) ([]string, error) { return c.Tempo.AttributeValues(ctx, s, name) },
+			func(r *Result, values []string) {
+				if r.LabelValues == nil {
+					r.LabelValues = map[string][]string{}
+				}
+				r.LabelValues[name] = values
+			},
+			func(r *Result) []string {
+				if r.LabelValues == nil {
+					return nil
+				}
+				return r.LabelValues[name]
+			})
+		if err != nil {
+			return nil, err
+		}
+		merged = append(merged, values...)
+	}
+	return sortedUnique(merged), nil
 }
 
 func (c *Checker) newFinding(code finding.Code, src finding.Source, msg string, suggestions []string, ctx finding.Context) finding.Finding {

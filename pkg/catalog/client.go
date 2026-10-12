@@ -38,6 +38,18 @@ type LogQLClient interface {
 	LabelValues(ctx context.Context, name string) ([]string, error)
 }
 
+// TraceQLClient retrieves catalog information from a Tempo HTTP API.
+//
+// scope is one of the TraceQL attribute scopes Tempo indexes ("span",
+// "resource", "event", "link", "instrumentation").
+type TraceQLClient interface {
+	// AttributeNames returns the attribute names Tempo holds in scope.
+	AttributeNames(ctx context.Context, scope string) ([]string, error)
+	// AttributeValues returns the string values Tempo holds for the
+	// attribute name in scope.
+	AttributeValues(ctx context.Context, scope, name string) ([]string, error)
+}
+
 // ClientError is returned by HTTP clients when the upstream answers with
 // a non-2xx status or a Prometheus-style {"status":"error"} envelope.
 //
@@ -81,7 +93,8 @@ type httpClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// clientCommon is shared scaffolding for [MimirClient] and [LokiClient].
+// clientCommon is shared scaffolding for [MimirClient], [LokiClient] and
+// [TempoClient].
 type clientCommon struct {
 	baseURL string
 	http    httpClient
@@ -109,39 +122,9 @@ func newClientCommon(baseURL string, hc *http.Client, headers http.Header) (clie
 // the envelope's data field into out. matchers are encoded as repeated
 // `match[]=` parameters when non-empty.
 func (c clientCommon) getJSON(ctx context.Context, path string, params url.Values, out any) error {
-	full := c.baseURL + path
-	if encoded := params.Encode(); encoded != "" {
-		full += "?" + encoded
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
+	full, body, err := c.get(ctx, path, params)
 	if err != nil {
-		return fmt.Errorf("catalog: build request: %w", err)
-	}
-	for k, vs := range c.headers {
-		for _, v := range vs {
-			req.Header.Add(k, v)
-		}
-	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("catalog: %s: %w", full, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32 MiB cap
-	if err != nil {
-		return fmt.Errorf("catalog: %s: read body: %w", full, err)
-	}
-
-	if resp.StatusCode/100 != 2 {
-		return &ClientError{
-			URL:        full,
-			StatusCode: resp.StatusCode,
-			Message:    truncate(string(body), 512),
-		}
+		return err
 	}
 
 	var env promAPIResponse
@@ -165,6 +148,59 @@ func (c clientCommon) getJSON(ctx context.Context, path string, params url.Value
 		return fmt.Errorf("catalog: %s: decode data: %w", full, err)
 	}
 	return nil
+}
+
+// getPlainJSON issues a GET like [clientCommon.getJSON] and decodes the
+// whole body into out, for APIs that answer without the Prometheus envelope.
+func (c clientCommon) getPlainJSON(ctx context.Context, path string, params url.Values, out any) error {
+	full, body, err := c.get(ctx, path, params)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("catalog: %s: decode body: %w", full, err)
+	}
+	return nil
+}
+
+// get issues a GET to path with the given query string and returns the
+// request URL and the body of a 2xx response.
+func (c clientCommon) get(ctx context.Context, path string, params url.Values) (string, []byte, error) {
+	full := c.baseURL + path
+	if encoded := params.Encode(); encoded != "" {
+		full += "?" + encoded
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
+	if err != nil {
+		return full, nil, fmt.Errorf("catalog: build request: %w", err)
+	}
+	for k, vs := range c.headers {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return full, nil, fmt.Errorf("catalog: %s: %w", full, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32 MiB cap
+	if err != nil {
+		return full, nil, fmt.Errorf("catalog: %s: read body: %w", full, err)
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return full, nil, &ClientError{
+			URL:        full,
+			StatusCode: resp.StatusCode,
+			Message:    truncate(string(body), 512),
+		}
+	}
+	return full, body, nil
 }
 
 // matchParams encodes matchers as repeated match[]=… query params.
