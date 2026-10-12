@@ -321,6 +321,9 @@ Usage:
   ratatoskr traceql expr -           # read one expression per line from stdin
   ratatoskr dashboard <path>...      # extract a Grafana dashboard JSON file
   ratatoskr dashboard -              # read a dashboard JSON from stdin
+  ratatoskr lint [flags]             # offline checks only
+  ratatoskr check [flags]            # online catalog checks only
+  ratatoskr validate [flags]         # lint and check in one pass
   ratatoskr --version                # print version and exit
   ratatoskr --help                   # print this help
 
