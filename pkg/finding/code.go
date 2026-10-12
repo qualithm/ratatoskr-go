@@ -56,6 +56,12 @@ const (
 	CodeSelftestExpectationUnmet Code = "E701_SELFTEST_EXPECTATION_UNMET"
 )
 
+// Catalog TraceQL codes (E800–E899).
+const (
+	CodeTraceAttributeUnknown      Code = "E801_TRACE_ATTRIBUTE_UNKNOWN"
+	CodeTraceAttributeValueUnknown Code = "E802_TRACE_ATTRIBUTE_VALUE_UNKNOWN"
+)
+
 // Suppression codes (I900–I999).
 const (
 	CodeSuppressed Code = "I901_SUPPRESSED"

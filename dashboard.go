@@ -59,7 +59,7 @@ type DashboardTarget struct {
 	RefID string `json:"refId,omitempty"`
 	// Datasource is the resolved datasource type for this target.
 	Datasource string `json:"datasource,omitempty"`
-	// Language is one of "promql", "logql", "unknown".
+	// Language is one of "promql", "logql", "traceql", "unknown".
 	Language string `json:"language"`
 	// Expr is the raw expression text, before variable substitution.
 	Expr string `json:"expr"`
@@ -70,6 +70,8 @@ type DashboardTarget struct {
 	PromQL *Result `json:"promql,omitempty"`
 	// LogQL holds the extraction when Language is "logql".
 	LogQL *LogQLResult `json:"logql,omitempty"`
+	// TraceQL holds the extraction when Language is "traceql".
+	TraceQL *TraceQLResult `json:"traceql,omitempty"`
 	// Error reports a parse error from the language extractor, if any.
 	Error string `json:"error,omitempty"`
 }
@@ -82,7 +84,7 @@ type DashboardVariable struct {
 	Type string `json:"type,omitempty"`
 	// Datasource is the resolved datasource type for the variable's query.
 	Datasource string `json:"datasource,omitempty"`
-	// Language is one of "promql", "logql", "unknown".
+	// Language is one of "promql", "logql", "traceql", "unknown".
 	Language string `json:"language,omitempty"`
 	// Query is the raw query expression text, before variable substitution.
 	Query string `json:"query,omitempty"`
@@ -93,6 +95,8 @@ type DashboardVariable struct {
 	PromQL *Result `json:"promql,omitempty"`
 	// LogQL holds the extraction when Language is "logql".
 	LogQL *LogQLResult `json:"logql,omitempty"`
+	// TraceQL holds the extraction when Language is "traceql".
+	TraceQL *TraceQLResult `json:"traceql,omitempty"`
 	// Error reports a parse error from the language extractor, if any.
 	Error string `json:"error,omitempty"`
 }
@@ -121,6 +125,7 @@ type grafanaTarget struct {
 	Datasource json.RawMessage `json:"datasource"`
 	Expr       string          `json:"expr"`
 	Query      string          `json:"query"`
+	QueryType  string          `json:"queryType"`
 }
 
 type grafanaTemplating struct {
@@ -180,6 +185,9 @@ func ExtractDashboard(r io.Reader) (DashboardResult, error) {
 				if tDS == "" {
 					tDS = ds
 				}
+				if languageFor(tDS) == "traceql" && !isTraceQLQuery(t.QueryType, expr) {
+					continue
+				}
 				panel.Targets = append(panel.Targets, extractTarget(t.RefID, tDS, expr))
 			}
 			out.Panels = append(out.Panels, panel)
@@ -235,8 +243,28 @@ func extractTarget(refID, ds, expr string) DashboardTarget {
 		if err != nil {
 			t.Error = err.Error()
 		}
+	case "traceql":
+		res, err := ExtractTraceQL(norm)
+		t.TraceQL = &res
+		if err != nil {
+			t.Error = err.Error()
+		}
 	}
 	return t
+}
+
+// traceIDRE matches a bare trace ID, which Grafana's Tempo query editor
+// accepts in place of a TraceQL expression.
+var traceIDRE = regexp.MustCompile(`^[0-9a-fA-F]{16,32}$`)
+
+// isTraceQLQuery reports whether a Tempo target's query is a TraceQL
+// expression. Tempo targets also carry search forms, service-graph filters
+// and trace ID lookups, none of which is TraceQL.
+func isTraceQLQuery(queryType, expr string) bool {
+	if queryType != "" && queryType != "traceql" {
+		return false
+	}
+	return !traceIDRE.MatchString(strings.TrimSpace(expr))
 }
 
 func extractInto(dv *DashboardVariable, expr string) {
@@ -262,6 +290,12 @@ func extractInto(dv *DashboardVariable, expr string) {
 	case "logql":
 		res, err := ExtractLogQL(norm)
 		dv.LogQL = &res
+		if err != nil {
+			dv.Error = err.Error()
+		}
+	case "traceql":
+		res, err := ExtractTraceQL(norm)
+		dv.TraceQL = &res
 		if err != nil {
 			dv.Error = err.Error()
 		}
@@ -436,6 +470,8 @@ func languageFor(ds string) string {
 		return "promql"
 	case strings.Contains(ds, "loki"):
 		return "logql"
+	case strings.Contains(ds, "tempo"):
+		return "traceql"
 	default:
 		return "unknown"
 	}

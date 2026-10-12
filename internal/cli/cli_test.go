@@ -637,3 +637,93 @@ func TestUnknownFlagExitsErrors(t *testing.T) {
 		t.Fatalf("code=%d", code)
 	}
 }
+
+type fakeTempoClient struct{ names []string }
+
+func (f *fakeTempoClient) AttributeNames(_ context.Context, _ string) ([]string, error) {
+	return f.names, nil
+}
+
+func (f *fakeTempoClient) AttributeValues(_ context.Context, _, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func writeTempoDashboard(t *testing.T, dir string) {
+	t.Helper()
+	writeRule(t, dir, "d.json", `{"title":"t","panels":[{"id":1,"title":"p","datasource":{"type":"tempo"},
+      "targets":[{"refId":"A","queryType":"traceql","query":"{ span.nope = \"x\" }"}]}]}`)
+}
+
+func TestValidateWithTempoOnly(t *testing.T) {
+	t.Parallel()
+	for _, sub := range []string{"check", "validate"} {
+		dir := t.TempDir()
+		writeTempoDashboard(t, dir)
+		env, stdout, _ := testEnv(t)
+		var gotURL string
+		env.NewTempo = func(baseURL string, _ *http.Client, _ http.Header) (catalog.TraceQLClient, error) {
+			gotURL = baseURL
+			return &fakeTempoClient{names: []string{"http.route"}}, nil
+		}
+		code := cli.Run(context.Background(), *env, []string{
+			sub,
+			"--dashboards", dir,
+			"--tempo-url", "http://tempo.test",
+			"--format", "ndjson",
+		})
+		if code != cli.ExitErrors {
+			t.Fatalf("%s: code=%d stdout=%s", sub, code, stdout.String())
+		}
+		if gotURL != "http://tempo.test" {
+			t.Fatalf("%s: tempo client built for %q", sub, gotURL)
+		}
+		if !strings.Contains(stdout.String(), "E801") {
+			t.Fatalf("%s: expected E801 (trace attribute unknown) in stdout: %s", sub, stdout.String())
+		}
+	}
+}
+
+func TestValidateWithoutTempoURLSkipsTraceCatalog(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeTempoDashboard(t, dir)
+	env, stdout, _ := testEnv(t)
+	env.NewTempo = func(string, *http.Client, http.Header) (catalog.TraceQLClient, error) {
+		t.Error("tempo client must not be built without --tempo-url")
+		return nil, nil
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"validate", "--dashboards", dir, "--format", "ndjson",
+	})
+	if code != cli.ExitOK {
+		t.Fatalf("code=%d stdout=%s", code, stdout.String())
+	}
+	if strings.Contains(stdout.String(), "E801") {
+		t.Fatalf("no catalog finding expected: %s", stdout.String())
+	}
+}
+
+func TestTempoClientCtorError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeTempoDashboard(t, dir)
+	env, _, stderr := testEnv(t)
+	env.NewTempo = func(string, *http.Client, http.Header) (catalog.TraceQLClient, error) {
+		return nil, errors.New("bad url")
+	}
+	code := cli.Run(context.Background(), *env, []string{
+		"check", "--dashboards", dir, "--tempo-url", "::",
+	})
+	if code != cli.ExitErrors || !strings.Contains(stderr.String(), "tempo client") {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+}
+
+func TestDefaultEnvBuildsTempoClient(t *testing.T) {
+	t.Parallel()
+	env := cli.DefaultEnv()
+	c, err := env.NewTempo("http://tempo.test", nil, nil)
+	if err != nil || c == nil {
+		t.Fatalf("NewTempo: %v, %v", c, err)
+	}
+}
