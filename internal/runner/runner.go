@@ -257,8 +257,8 @@ func expand(paths []string, allowedExt ...string) ([]string, error) {
 	return out, nil
 }
 
-// runCatalog prewarms (when enabled) then runs CheckPromQL / CheckLogQL
-// over every extracted expression. Sources are populated from the
+// runCatalog prewarms (when enabled) then runs CheckPromQL / CheckLogQL /
+// CheckTraceQL over every extracted expression. Sources are populated from the
 // rule-file or dashboard the expression came from. It also returns the
 // wall-clock time spent in the parallel prewarm phase (zero when
 // prewarm was disabled).
@@ -297,6 +297,7 @@ func runCatalog(
 			}
 		}
 	}
+	traceExprs := []taggedTraceQL{}
 	for _, d := range dashboards {
 		for _, p := range d.Panels {
 			for _, t := range p.Targets {
@@ -309,6 +310,10 @@ func runCatalog(
 				case "logql":
 					if t.LogQL != nil && t.Error == "" {
 						lokiExprs = append(lokiExprs, taggedLogQL{res: *t.LogQL, source: src})
+					}
+				case "traceql":
+					if t.TraceQL != nil && t.Error == "" {
+						traceExprs = append(traceExprs, taggedTraceQL{res: *t.TraceQL, source: src})
 					}
 				}
 			}
@@ -324,6 +329,10 @@ func runCatalog(
 				if v.LogQL != nil && v.Error == "" {
 					lokiExprs = append(lokiExprs, taggedLogQL{res: *v.LogQL, source: src})
 				}
+			case "traceql":
+				if v.TraceQL != nil && v.Error == "" {
+					traceExprs = append(traceExprs, taggedTraceQL{res: *v.TraceQL, source: src})
+				}
 			}
 		}
 	}
@@ -331,14 +340,18 @@ func runCatalog(
 	var prewarmDur time.Duration
 	if cfg.Prewarm {
 		in := catalog.PrewarmInputs{
-			PromQL: make([]ratatoskr.Result, 0, len(promExprs)),
-			LogQL:  make([]ratatoskr.LogQLResult, 0, len(lokiExprs)),
+			PromQL:  make([]ratatoskr.Result, 0, len(promExprs)),
+			LogQL:   make([]ratatoskr.LogQLResult, 0, len(lokiExprs)),
+			TraceQL: make([]ratatoskr.TraceQLResult, 0, len(traceExprs)),
 		}
 		for _, e := range promExprs {
 			in.PromQL = append(in.PromQL, e.res)
 		}
 		for _, e := range lokiExprs {
 			in.LogQL = append(in.LogQL, e.res)
+		}
+		for _, e := range traceExprs {
+			in.TraceQL = append(in.TraceQL, e.res)
 		}
 		prewarmStart := time.Now()
 		err := catalog.Prewarm(ctx, cfg.Checker, in, cfg.PrewarmParallelism)
@@ -363,7 +376,19 @@ func runCatalog(
 		}
 		out = append(out, fs...)
 	}
+	for _, e := range traceExprs {
+		fs, err := cfg.Checker.CheckTraceQL(ctx, e.res, e.source)
+		if err != nil {
+			return nil, prewarmDur, fmt.Errorf("runner: catalog check (%s): %w", e.source.File, err)
+		}
+		out = append(out, fs...)
+	}
 	return out, prewarmDur, nil
+}
+
+type taggedTraceQL struct {
+	res    ratatoskr.TraceQLResult
+	source finding.Source
 }
 
 type taggedPromQL struct {

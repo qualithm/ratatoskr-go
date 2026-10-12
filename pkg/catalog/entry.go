@@ -1,10 +1,12 @@
-// Package catalog answers the question "does this label / metric / stream
-// exist in the live Mimir or Loki instance?" for Ratatoskr's validators.
+// Package catalog answers the question "does this label / metric / stream /
+// trace attribute exist in the live Mimir, Loki or Tempo instance?" for
+// Ratatoskr's validators.
 //
 // Cache layout on disk:
 //
 //	<root>/v1/promql/<sha256(query)>.json
 //	<root>/v1/logql/<sha256(query)>.json
+//	<root>/v1/traceql/<sha256(query)>.json
 //
 // Every entry is self-describing — the query, language, source, and fetched
 // timestamp are stored alongside the result, so cache files can be inspected
@@ -31,13 +33,19 @@ const (
 	LanguagePromQL Language = "promql"
 	// LanguageLogQL — entries describing Loki catalog state.
 	LanguageLogQL Language = "logql"
+	// LanguageTraceQL — entries describing Tempo catalog state.
+	LanguageTraceQL Language = "traceql"
 )
+
+// languages lists every recognized language, in on-disk probe order.
+var languages = []Language{LanguagePromQL, LanguageLogQL, LanguageTraceQL}
 
 // Valid reports whether l is a recognized language.
 func (l Language) Valid() bool {
-	switch l {
-	case LanguagePromQL, LanguageLogQL:
-		return true
+	for _, known := range languages {
+		if l == known {
+			return true
+		}
 	}
 	return false
 }

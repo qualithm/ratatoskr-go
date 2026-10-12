@@ -109,10 +109,10 @@ func (s *FSStore) pathFor(lang Language, key string) string {
 
 // Get implements [Store]. Because the on-disk layout shards by language
 // and the cache key does not encode the language as a directory hint,
-// [Get] probes both language directories. This keeps the [Store]
+// [Get] probes every language directory. This keeps the [Store]
 // interface language-agnostic at trivial filesystem cost.
 func (s *FSStore) Get(key string) (Entry, error) {
-	for _, lang := range []Language{LanguagePromQL, LanguageLogQL} {
+	for _, lang := range languages {
 		e, err := s.readFile(s.pathFor(lang, key))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -184,7 +184,7 @@ func (s *FSStore) Put(e Entry) error {
 
 // Delete implements [Store]. Missing keys are not an error.
 func (s *FSStore) Delete(key string) error {
-	for _, lang := range []Language{LanguagePromQL, LanguageLogQL} {
+	for _, lang := range languages {
 		if err := os.Remove(s.pathFor(lang, key)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
