@@ -37,6 +37,11 @@ func TestRun_Help(t *testing.T) {
 		if !strings.Contains(stdout, "ratatoskr extracts") {
 			t.Fatalf("%s: expected help on stdout, got %q", a, stdout)
 		}
+		for _, cmd := range []string{"lint", "check", "validate"} {
+			if !strings.Contains(stdout, "ratatoskr "+cmd+" [flags]") {
+				t.Fatalf("%s: expected help to list %q, got %q", a, cmd, stdout)
+			}
+		}
 	}
 }
 
