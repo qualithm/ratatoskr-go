@@ -133,7 +133,7 @@ Three subcommands report findings on Prometheus rule files, Loki rule files and 
 | Subcommand | Runs                                                                        |
 | ---------- | --------------------------------------------------------------------------- |
 | `lint`     | Offline checks. No network.                                                 |
-| `check`    | Catalog checks against Mimir or Prometheus, and Loki. No lint.              |
+| `check`    | Catalog checks against Mimir or Prometheus, Loki and Tempo. No lint.        |
 | `validate` | Both in one pass. Without a URL, or with `--offline`, it runs `lint` alone. |
 
 Use `validate` unless your CI splits the offline and online gates.
@@ -165,8 +165,8 @@ ERROR E302_MISSING_ANNOTATION: alert is missing required annotation `description
 
 The command exits with status 2. Findings go to stdout. A JSON log line per run goes to stderr.
 
-To also check that every metric, label and label value exists in your catalog, pass the query API
-URLs:
+To also check that every metric, label, label value and trace attribute exists in your catalog, pass
+the query API URLs:
 
 ```bash
 ratatoskr validate \
@@ -174,8 +174,15 @@ ratatoskr validate \
   --loki-rules loki-rules/ \
   --dashboards dashboards/ \
   --prometheus-url <your-mimir-url> \
-  --loki-url <your-loki-url>
+  --loki-url <your-loki-url> \
+  --tempo-url <your-tempo-url>
 ```
+
+Each URL turns on the checks for its own query language, so pass only the ones you run. Dashboard
+panels on a Tempo datasource are parsed as TraceQL whatever URLs you pass. With `--tempo-url`, every
+attribute a query names must exist in Tempo in the scope the query gives it, and every string it
+compares an attribute with must be a value Tempo has seen. Tempo answers from recent traces, so add
+an attribute that is emitted rarely to the allowlist.
 
 #### Flags
 
@@ -184,7 +191,7 @@ All three subcommands accept the same flags. `ratatoskr validate -h` prints them
 | Flag                                                           | Purpose                                                                    |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `--prometheus-rules`, `--loki-rules`, `--dashboards`           | Input file or directory. Repeatable. At least one is required.             |
-| `--prometheus-url`, `--loki-url`                               | Query API base URLs for the catalog checks. `check` requires at least one. |
+| `--prometheus-url`, `--loki-url`, `--tempo-url`                | Query API base URLs for the catalog checks. `check` requires at least one. |
 | `--prometheus-header K=V`                                      | Extra HTTP header on Mimir requests. Repeatable.                           |
 | `--allowlist FILE`                                             | Suppress catalog findings for known-missing names.                         |
 | `--cache-dir DIR`                                              | Keep the catalog cache on disk. The default is in memory.                  |

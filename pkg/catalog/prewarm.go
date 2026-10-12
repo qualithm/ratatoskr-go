@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"sync"
 
 	ratatoskr "github.com/qualithm/ratatoskr-go"
@@ -15,8 +16,9 @@ import (
 //
 // Either slice may be empty. Nil values are skipped.
 type PrewarmInputs struct {
-	PromQL []ratatoskr.Result
-	LogQL  []ratatoskr.LogQLResult
+	PromQL  []ratatoskr.Result
+	LogQL   []ratatoskr.LogQLResult
+	TraceQL []ratatoskr.TraceQLResult
 }
 
 // Prewarm primes the [Checker.Store] with every catalog response the
@@ -82,7 +84,7 @@ type prewarmTask func(ctx context.Context) error
 // plan returns the deduplicated set of fetch tasks needed to populate the
 // cache for the given inputs. Ordering is deterministic for stable test
 // output: PromQL global metric names first, then per-metric label sets,
-// then per-(metric,label) value sets, then LogQL.
+// then per-(metric,label) value sets, then LogQL, then TraceQL.
 func plan(c *Checker, in PrewarmInputs) []prewarmTask {
 	tasks := []prewarmTask{}
 
@@ -171,6 +173,46 @@ func plan(c *Checker, in PrewarmInputs) []prewarmTask {
 				_, err := c.lokiLabelValues(ctx, label)
 				return err
 			})
+		}
+	}
+
+	// TraceQL.
+	if c.Tempo != nil {
+		scopes := map[string]struct{}{}
+		valuesByScopeName := map[string]map[string]string{}
+		for _, r := range in.TraceQL {
+			for _, a := range r.Attributes {
+				for _, s := range traceScopes(a.Scope) {
+					scopes[s] = struct{}{}
+				}
+			}
+			for _, m := range r.Matchers {
+				if m.Value == "" || strings.Contains(m.Value, ratatoskr.DashboardVariableSentinel) {
+					continue
+				}
+				for _, s := range traceScopes(m.Attribute.Scope) {
+					if valuesByScopeName[s] == nil {
+						valuesByScopeName[s] = map[string]string{}
+					}
+					valuesByScopeName[s][m.Attribute.Name] = m.Attribute.Name
+				}
+			}
+		}
+		for _, scope := range sortedKeys(scopes) {
+			scope := scope
+			tasks = append(tasks, func(ctx context.Context) error {
+				_, err := c.traceAttributeNames(ctx, scope)
+				return err
+			})
+		}
+		for _, scope := range sortedKeys(valuesByScopeName) {
+			for _, name := range sortedKeys(valuesByScopeName[scope]) {
+				scope, name := scope, name
+				tasks = append(tasks, func(ctx context.Context) error {
+					_, err := c.traceAttributeValues(ctx, scope, name)
+					return err
+				})
+			}
 		}
 	}
 

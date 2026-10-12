@@ -2,6 +2,7 @@ package runner_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -428,5 +429,125 @@ func TestRunUnreadableFile(t *testing.T) {
 	}
 	if !sawRead {
 		t.Fatalf("expected 'cannot read file' message; findings=%+v", res.Findings)
+	}
+}
+
+type fakeTempoClient struct {
+	names  map[string][]string
+	values map[string]map[string][]string
+}
+
+func (f *fakeTempoClient) AttributeNames(_ context.Context, scope string) ([]string, error) {
+	return f.names[scope], nil
+}
+
+func (f *fakeTempoClient) AttributeValues(_ context.Context, scope, name string) ([]string, error) {
+	return f.values[scope][name], nil
+}
+
+const tempoDashboard = `{
+  "title": "traces",
+  "templating": {"list": [
+    {"name": "svc", "type": "query", "datasource": {"type": "tempo"}, "query": "{ resource.service.nam = \"platform\" }"},
+    {"name": "bad", "type": "query", "datasource": {"type": "tempo"}, "query": "{ span. = }"}
+  ]},
+  "panels": [
+    {"id": 3, "title": "requests", "datasource": {"type": "tempo"}, "targets": [
+      {"refId": "A", "queryType": "traceql", "query": "{ span.http.route = \"/account\" && span.http.rout = \"/x\" }"},
+      {"refId": "B", "queryType": "traceql", "query": "{ span.http.route = }"},
+      {"refId": "C", "queryType": "traceql", "query": "{ span.db.system.name = \"postgres\" }"}
+    ]}
+  ]
+}`
+
+func TestRunTempoDashboardParseErrorsWithoutChecker(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeFile(t, dir, "d.json", tempoDashboard)
+	res, err := runner.Run(context.Background(), runner.Config{}, runner.Inputs{DashboardPaths: []string{dir}})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	parse := []finding.Finding{}
+	for _, f := range res.Findings {
+		if f.Code == finding.CodePromQLParseError {
+			parse = append(parse, f)
+		}
+	}
+	if len(parse) != 2 {
+		t.Fatalf("want an E001 for panel B and variable bad, got %+v", res.Findings)
+	}
+	for _, f := range parse {
+		if !strings.HasPrefix(f.Message, "traceql parse error: ") {
+			t.Errorf("message = %q", f.Message)
+		}
+	}
+	if len(res.Findings) != len(parse) {
+		t.Fatalf("no catalog findings expected without a checker: %+v", res.Findings)
+	}
+}
+
+func TestRunTempoDashboardCatalog(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeFile(t, dir, "d.json", tempoDashboard)
+	tempo := &fakeTempoClient{
+		names: map[string][]string{
+			"resource": {"service.name"},
+			"span":     {"http.route", "db.system.name"},
+		},
+		values: map[string]map[string][]string{
+			"span": {"http.route": {"/account"}, "db.system.name": {"rqlite"}},
+		},
+	}
+	for _, prewarm := range []bool{true, false} {
+		c := &catalog.Checker{
+			Tempo: tempo, TempoSource: "http://tempo.test",
+			Now: func() time.Time { return time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC) },
+		}
+		res, err := runner.Run(context.Background(), runner.Config{Checker: c, Prewarm: prewarm},
+			runner.Inputs{DashboardPaths: []string{dir}})
+		if err != nil {
+			t.Fatalf("Run(prewarm=%v): %v", prewarm, err)
+		}
+		got := map[string]string{}
+		for _, f := range res.Findings {
+			if f.Category == finding.CategoryCatalog {
+				got[f.Source.Panel] = string(f.Code) + " " + f.Context.Label + " " + f.Context.Value
+			}
+		}
+		want := map[string]string{
+			"requests/A": "E801_TRACE_ATTRIBUTE_UNKNOWN span.http.rout ",
+			"requests/C": "E802_TRACE_ATTRIBUTE_VALUE_UNKNOWN span.db.system.name postgres",
+			"var=svc":    "E801_TRACE_ATTRIBUTE_UNKNOWN resource.service.nam ",
+		}
+		if len(got) != len(want) {
+			t.Fatalf("prewarm=%v: catalog findings = %v, want %v", prewarm, got, want)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("prewarm=%v: %s = %q, want %q", prewarm, k, got[k], v)
+			}
+		}
+	}
+}
+
+type errTempoClient struct{}
+
+func (errTempoClient) AttributeNames(context.Context, string) ([]string, error) {
+	return nil, errors.New("tempo down")
+}
+
+func (errTempoClient) AttributeValues(context.Context, string, string) ([]string, error) {
+	return nil, errors.New("tempo down")
+}
+
+func TestRunTempoCatalogErrorIsFatal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeFile(t, dir, "d.json", tempoDashboard)
+	c := &catalog.Checker{Tempo: errTempoClient{}, TempoSource: "http://tempo.test"}
+	if _, err := runner.Run(context.Background(), runner.Config{Checker: c}, runner.Inputs{DashboardPaths: []string{dir}}); err == nil {
+		t.Fatal("expected the catalog error to fail the run")
 	}
 }

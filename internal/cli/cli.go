@@ -55,6 +55,7 @@ type Env struct {
 	NewFSStore  func(root string) catalog.Store
 	NewMimir    func(baseURL string, hc *http.Client, headers http.Header) (catalog.PromQLClient, error)
 	NewLoki     func(baseURL string, hc *http.Client, headers http.Header) (catalog.LogQLClient, error)
+	NewTempo    func(baseURL string, hc *http.Client, headers http.Header) (catalog.TraceQLClient, error)
 	NewRunnerFn func(ctx context.Context, cfg runner.Config, in runner.Inputs) (*runner.Result, error)
 	// BuildInfo identifies the running binary in telemetry. main()
 	// overrides the defaults with linker-injected values.
@@ -82,6 +83,9 @@ func DefaultEnv() Env {
 		},
 		NewLoki: func(baseURL string, hc *http.Client, headers http.Header) (catalog.LogQLClient, error) {
 			return catalog.NewLokiClient(baseURL, hc, headers)
+		},
+		NewTempo: func(baseURL string, hc *http.Client, headers http.Header) (catalog.TraceQLClient, error) {
+			return catalog.NewTempoClient(baseURL, hc, headers)
 		},
 		NewRunnerFn: runner.Run,
 		Logger:      obs.Discard(),
@@ -126,6 +130,7 @@ type flags struct {
 
 	prometheusURL string
 	lokiURL       string
+	tempoURL      string
 	promHeaders   stringSlice
 	allowlist     string
 	cacheDir      string
@@ -158,6 +163,7 @@ func newFlagSet(name string, env Env) (*flag.FlagSet, *flags) {
 
 	fs.StringVar(&f.prometheusURL, "prometheus-url", "", "base URL of the Mimir/Prometheus query API (required for check/validate online passes)")
 	fs.StringVar(&f.lokiURL, "loki-url", "", "base URL of the Loki query API")
+	fs.StringVar(&f.tempoURL, "tempo-url", "", "base URL of the Tempo query API")
 	fs.Var(&f.promHeaders, "prometheus-header", "extra HTTP header on Mimir requests, K=V (repeatable)")
 	fs.StringVar(&f.allowlist, "allowlist", "", "path to an allowlist YAML file")
 	fs.StringVar(&f.cacheDir, "cache-dir", "", "directory for the on-disk catalog cache (default: in-memory)")
@@ -285,7 +291,7 @@ func buildRunnerConfig(env Env, f *flags, m mode) (runner.Config, error) {
 		if f.offline {
 			break
 		}
-		if f.prometheusURL == "" && f.lokiURL == "" {
+		if f.prometheusURL == "" && f.lokiURL == "" && f.tempoURL == "" {
 			// validate without endpoints is the same as lint
 			break
 		}
@@ -337,8 +343,16 @@ func buildChecker(env Env, f *flags) (*catalog.Checker, error) {
 		c.Loki = lc
 		c.LokiSource = f.lokiURL
 	}
-	if c.Prom == nil && c.Loki == nil {
-		return nil, errors.New("check mode requires --prometheus-url and/or --loki-url")
+	if f.tempoURL != "" {
+		tc, err := env.NewTempo(f.tempoURL, env.HTTPClient, nil)
+		if err != nil {
+			return nil, fmt.Errorf("tempo client: %w", err)
+		}
+		c.Tempo = tc
+		c.TempoSource = f.tempoURL
+	}
+	if c.Prom == nil && c.Loki == nil && c.Tempo == nil {
+		return nil, errors.New("check mode requires at least one of --prometheus-url, --loki-url, --tempo-url")
 	}
 	if f.cacheDir != "" {
 		c.Store = env.NewFSStore(f.cacheDir)
