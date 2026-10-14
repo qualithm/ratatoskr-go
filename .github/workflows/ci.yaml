@@ -114,7 +114,8 @@ jobs:
           verify: false
       - name: Verify golangci-lint config
         run: |
-          golangci-lint config path >/dev/null 2>&1 || exit 0
+          golangci-lint version
+          golangci-lint config path >/dev/null 2>&1 || { echo "No golangci-lint config; skipping verify"; exit 0; }
           for attempt in 1 2 3; do
             golangci-lint config verify && exit 0
             echo "config verify failed (attempt $attempt); retrying"
