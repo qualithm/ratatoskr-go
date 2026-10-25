@@ -1,5 +1,9 @@
+# Base block, the same in every repo
 .DS_Store
 .env*
+.idea/
+.vscode/
+coverage/
 
 # Binaries
 /bin/
@@ -15,4 +19,3 @@ go.work
 go.work.sum
 
 # IDE
-.idea/
