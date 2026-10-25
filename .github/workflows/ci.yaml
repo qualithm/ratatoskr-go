@@ -218,6 +218,29 @@ jobs:
           path: benchmark.txt
           retention-days: 30
 
+  docs:
+    name: Docs
+    needs: changes
+    # Full tier: the API docs build only on the main hop, where a release is
+    # cut from. pkg.go.dev renders the doc comments on publish; this
+    # fails first on a package whose docs don't build or that go vet rejects.
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.is-main == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: go vet ./...
+      - name: Render every package's docs
+        run: |
+          set -euo pipefail
+          go list ./... | while read -r pkg; do
+            go doc -all "$pkg" >/dev/null
+          done
+
   image-pins:
     name: Image Pins
     # Every image reference in the repo must match the vendored dx registry
@@ -239,7 +262,7 @@ jobs:
   ci-required:
     name: CI Required
     if: always()
-    needs: [changes, build, lint, coverage, benchmarks, image-pins]
+    needs: [changes, build, lint, coverage, benchmarks, docs, image-pins]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
