@@ -22,14 +22,14 @@ and doc comments on exported identifiers. Fix what they flag; this file covers w
 
 ## Runtime
 
-- Log with `log/slog` key/value pairs (`slog.Info("fetching user", "user_id", id)`), never
+- Log with `log/slog` key/value pairs (`slog.Info("user_fetched", "user_id", id)`), never
   `fmt.Println` or `log.Printf`. Pass a `*slog.Logger` into components; avoid global state in
   libraries.
 - `context.Context` is the first argument of anything that blocks or does I/O, and cancellation is
   honored. Never start a goroutine without a clear lifecycle; prefer `errgroup`/`sync.WaitGroup` and
   document who owns shared state.
-- Config structs are `{Component}Config` with a commented field each, units in names or comments
-  (`TimeoutMS`), and a `Default{Type}()` constructor with production values.
+- Config structs are `{Component}Config` with a commented field each, units in names (`TimeoutMS`),
+  and a `Default{Type}()` constructor with production values.
 
 ## Tests
 
