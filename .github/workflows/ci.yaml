@@ -177,10 +177,21 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+      # Built from source, not the release binary: golangci-lint refuses a module
+      # whose go directive is newer than the Go it was built with. The build is
+      # cached per golangci-lint and Go version (qualithm/pm#3014).
+      - name: Restore golangci-lint
+        id: golangci-lint
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/go/bin/golangci-lint
+          key: golangci-lint-v2.15.0-go${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+      - name: Build golangci-lint
+        if: steps.golangci-lint.outputs.cache-hit != 'true'
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
       - uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
-          version: v2.15
-          install-mode: goinstall
+          install-mode: none
           # The action's own verify fetches the config JSON schema from golangci-lint.run once
           # and fails Lint on any network blip; the step below verifies with retries instead.
           verify: false
