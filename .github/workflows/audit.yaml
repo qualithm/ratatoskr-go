@@ -3,9 +3,18 @@
 
 name: Security Audit
 
+# Advisory scans run daily; every job runs on Mondays and on a push that
+# changes a dependency (qualithm/pm#3067).
 on:
   schedule:
-    - cron: "0 6 * * *" # Daily at 06:00 UTC
+    - cron: "0 6 * * 0,2-6" # Daily at 06:00 UTC, except Monday
+    - cron: "0 6 * * 1" # Monday at 06:00 UTC: every job
+  push:
+    branches: [development, main]
+    paths:
+      - "**/go.mod"
+      - "**/go.sum"
+      - ".github/workflows/audit.yaml"
   workflow_dispatch: {}
 
 permissions:
@@ -31,7 +40,28 @@ jobs:
           # claim CI's key on the default branch with a smaller build footprint. CI
           # would then hit it, restore too little, and skip saving the fuller cache.
           cache: false
+      # Restore, never save, CI's module and build cache: govulncheck loads
+      # every package. The paths must match setup-go's exactly for its cache to
+      # match (qualithm/pm#3019).
+      - name: Restore CI's Go cache
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            /home/runner/go/pkg/mod
+            /home/runner/.cache/go-build
+          key: setup-go-${{ runner.os }}-x64-ubuntu24-go-1.27.3-
+          restore-keys: setup-go-${{ runner.os }}-x64-ubuntu24-go-1.27.3-
+      # govulncheck ships no binary: build it once per version and Go, then
+      # restore it (qualithm/pm#3019).
+      - name: Restore govulncheck
+        id: govulncheck
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/go/bin/govulncheck
+          key:
+            govulncheck-${{ env.GOVULNCHECK_VERSION }}-go1.27.3-${{ runner.os }}-${{ runner.arch }}
       - name: Install govulncheck
+        if: steps.govulncheck.outputs.cache-hit != 'true'
         run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
       - name: Run govulncheck
         id: scan
@@ -64,6 +94,8 @@ jobs:
 
   gosec:
     name: Security Scan (gosec)
+    # Weekly: what it checks changes only with the code or dependencies.
+    if: github.event_name != 'schedule' || github.event.schedule == '0 6 * * 1'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
