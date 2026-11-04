@@ -26,6 +26,7 @@ env:
 
 jobs:
   build-binaries:
+    if: ${{ !endsWith(github.repository, '-example') }}
     name: Build Binary (${{ matrix.artifact }})
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -100,6 +101,7 @@ jobs:
           retention-days: 1
 
   docker:
+    if: ${{ !endsWith(github.repository, '-example') }}
     name: Build Docker Image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -143,6 +145,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        with:
+          # The runner is discarded after the job, so skip the 10s builder
+          # teardown that tips Publish Image past a billed minute (qualithm/pm#3021).
+          cleanup: false
 
       - name: Extract metadata
         id: meta
@@ -190,7 +196,7 @@ jobs:
 
   goreleaser:
     name: GoReleaser
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ !endsWith(github.repository, '-example') && (startsWith(github.ref, 'refs/tags/v')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
