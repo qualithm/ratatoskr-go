@@ -6,8 +6,9 @@ and doc comments on exported identifiers. Fix what they flag; this file covers w
 
 ## Layout
 
-- `cmd/<binary>/` for entry points, the module root for the library API, `internal/` for private
-  packages, `examples/<name>/` for runnable examples, `doc.go` for the one-line package comment.
+- `cmd/<binary>/` for entry points, the module root for the library API (an app-only module has no
+  root package), `internal/` for private packages, `examples/<name>/` for runnable examples,
+  `doc.go` for the one-line package comment.
 - Tests sit next to the code in `_test.go` files: `package foo_test` for black-box tests of the
   exported API, `package foo` for whitebox tests.
 
@@ -49,7 +50,7 @@ Adding or renaming an env var is a two-file change in one commit: declare it in 
 classify it in `env-manifest.json` (a per-environment static, a `generate` recipe, or an `obtain`
 pointer to where the value comes from). Run `dx env local` before committing; it fails when a
 required key is missing or empty in `.env`, the one local env file. `*-example` template repos carry
-an empty `env-example` and no manifest.
+neither file.
 
 ## Generated files
 
