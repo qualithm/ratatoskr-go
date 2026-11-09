@@ -302,13 +302,15 @@
       "Bash(dx images sync *)",
       "Bash(dx git sync-commit)",
       "Bash(dx git sync-commit *)",
+      "Bash(python3 .claude/checks/ci-jobs.py *)",
       "Bash(gofmt -s -l *)",
       "Bash(go mod tidy)",
       "Bash(go vet *)",
       "Bash(go build *)",
       "Bash(go test *)",
       "Bash(golangci-lint run)",
-      "Bash(golangci-lint run *)"
+      "Bash(golangci-lint run *)",
+      "Bash(go mod tidy -diff)"
     ],
     "ask": [
       "Bash(git push *--force)",
