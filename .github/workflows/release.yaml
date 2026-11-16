@@ -667,9 +667,13 @@ jobs:
             aarch64|arm64) yq_arch="arm64" ;;
             *) echo "Unsupported arch: $arch" >&2; exit 1 ;;
           esac
-          curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${yq_arch}"
-          chmod +x /usr/local/bin/yq
-          yq --version
+          # Self-hosted runners don't let the job write /usr/local/bin.
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          curl -fsSL -o "$bin/yq" "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${yq_arch}"
+          chmod +x "$bin/yq"
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/yq" --version
 
       - name: Update Helm values image tag and digest with yq
         shell: bash
