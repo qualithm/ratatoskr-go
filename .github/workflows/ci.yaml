@@ -264,8 +264,9 @@ jobs:
       - name: Enforce coverage threshold
         run: |
           # Drop the examples package: it's a runnable sample, not library code.
-          grep -v "/examples/" coverage.out > coverage.filtered.out
-          pct=$(go tool cover -func=coverage.filtered.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          # The filtered profile goes outside the checkout, so a local run leaves no file behind.
+          grep -v "/examples/" coverage.out > "$RUNNER_TEMP/coverage.filtered.out"
+          pct=$(go tool cover -func="$RUNNER_TEMP/coverage.filtered.out" | awk '/^total:/ {gsub("%","",$3); print $3}')
           echo "Total coverage (excluding examples): ${pct}%"
           awk -v p="$pct" 'BEGIN { if (p+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
       # A reused push to main uploads this report instead of re-running the
